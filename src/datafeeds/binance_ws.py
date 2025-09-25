@@ -2,6 +2,11 @@
 import asyncio
 import json
 from datetime import datetime, timezone
+import random
+from websockets.exceptions import (
+    ConnectionClosed, ConnectionClosedError, ConnectionClosedOK,
+    InvalidStatus, WebSocketException
+)
 
 import websockets
 
@@ -62,38 +67,56 @@ def _multi_stream_url(symbol: str, intervals: list[str]) -> str:
     return f"{BINANCE_WS_COMBINED}?{q}"
 
 async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = None) -> None:
-    """Conecta no combined stream e imprime OHLCV para vários timeframes."""
+    """
+    Combined stream com reconexão robusta:
+    - backoff exponencial com jitter (1s -> 2 -> 4 ... até 30s, com +/-20%)
+    - watchdog de inatividade: se não chegar mensagem em 90s, reconecta
+    - recv com timeout de 30s (evita ficar pendurado indefinidamente)
+    """
     if intervals is None:
         intervals = ["4h", "1d", "1w", "1M"]
 
     url = _multi_stream_url(symbol, intervals)
-    backoff = 1
+    base_backoff = 1      # valor base que vamos exponenciar
+    max_backoff = 30      # teto do backoff
+
     while True:
         try:
             print(f"➡️  Conectando em {url} ...")
             async with websockets.connect(
                 url,
-                ping_interval=20,
-                ping_timeout=20,
+                ping_interval=20,  # envia ping automático
+                ping_timeout=20,   # sem pong em 20s => erro
                 close_timeout=5,
                 max_size=2**20,
             ) as ws:
                 print("✅ Conectado (multi TF).")
-                backoff = 1
+                backoff = base_backoff
+                last_msg_ts = datetime.now(timezone.utc)
 
-                async for raw in ws:
-                    msg = json.loads(raw)
+                while True:
+                    # Watchdog: se passar 90s sem mensagens, força reconexão limpa
+                    now = datetime.now(timezone.utc)
+                    if (now - last_msg_ts).total_seconds() > 90:
+                        print("⏱️  Watchdog: 90s sem mensagens — fechando e reconectando…")
+                        await ws.close(code=1000)
+                        break
 
-                    # Combined stream vem como {"stream": "...", "data": {...}}
-                    data = msg.get("data") or {}
+                    try:
+                        # recv com timeout para não ficar pendurado para sempre
+                        raw = await asyncio.wait_for(ws.recv(), timeout=30)
+                    except asyncio.TimeoutError:
+                        # Sem mensagens em 30s: só continua; ping/pong já mantém a conexão viva
+                        continue
+
+                    data = json.loads(raw).get("data") or {}
                     k = data.get("k")
                     if not k:
                         continue
 
-                    # Descobre o timeframe a partir do próprio kline (campo "i")
-                    itv = k.get("i")  # ex.: "4h", "1d", "1w", "1M"
+                    last_msg_ts = datetime.now(timezone.utc)
+                    itv = k.get("i")  # "4h", "1d", "1w", "1M"
                     event_ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc)
-
                     o, h, l, c = k["o"], k["h"], k["l"], k["c"]
                     v = k["v"]
                     closed = k["x"]
@@ -102,7 +125,17 @@ async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = No
                         f"[{event_ts:%Y-%m-%d %H:%M:%S} UTC] {symbol} {itv:<2} "
                         f"O:{o} H:{h} L:{l} C:{c} V:{v} closed={closed}"
                     )
+
+        except (ConnectionClosed, ConnectionClosedError, ConnectionClosedOK, InvalidStatus, WebSocketException) as e:
+            # desconexões "normais" do WS
+            jitter = random.uniform(0.8, 1.2)
+            base_backoff = min(max_backoff, max(1, int((base_backoff * 2) * jitter)))
+            print(f"⚠️  WS desconectado: {type(e).__name__}: {e} — tentando reconectar em {base_backoff}s")
+            await asyncio.sleep(base_backoff)
+
         except Exception as e:
-            print(f"⚠️  WS erro (multi): {e} — reconectando em {backoff}s")
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30)
+            # qualquer outro erro inesperado
+            jitter = random.uniform(0.8, 1.2)
+            base_backoff = min(max_backoff, max(1, int((base_backoff * 2) * jitter)))
+            print(f"❗ Erro inesperado: {e} — reconectando em {base_backoff}s")
+            await asyncio.sleep(base_backoff)
