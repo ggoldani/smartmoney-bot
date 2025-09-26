@@ -7,6 +7,7 @@ from websockets.exceptions import (
     ConnectionClosed, ConnectionClosedError, ConnectionClosedOK,
     InvalidStatus, WebSocketException
 )
+from src.storage.repo import save_candle_event
 
 import websockets
 
@@ -35,9 +36,11 @@ BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws"
 def _kline_stream(symbol: str, interval: str) -> str:
     return f"{symbol.lower()}@kline_{interval}"
 
-
 async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
-    """Conecta no WS de klines da Binance e imprime OHLCV."""
+    """
+    Conecta no WS de klines da Binance e emite eventos normalizados.
+    Salva no SQLite somente quando o candle fecha (is_closed=True).
+    """
     stream = _kline_stream(symbol, interval)
     url = f"{BINANCE_WS_BASE}/{stream}"
 
@@ -61,20 +64,21 @@ async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
                     if not k:
                         continue
 
-                    event_ts = datetime.fromtimestamp(msg["E"] / 1000, tz=timezone.utc)
-                    o, h, l, c = k["o"], k["h"], k["l"], k["c"]
-                    v = k["v"]
-                    is_closed = k["x"]  # True quando o candle fecha
+                    # 🚀 normaliza
+                    event = normalize_kline(symbol, msg)  # msg tem {"k": {...}}
+                    print(event)
 
-                    print(
-                        f"[{event_ts:%Y-%m-%d %H:%M:%S} UTC] {symbol} 1m "
-                        f"O:{o} H:{h} L:{l} C:{c} V:{v} closed={is_closed}"
-                    )
+                    # 💾 salva somente se fechou
+                    if event["is_closed"]:
+                        saved = save_candle_event(event)
+                        if saved:
+                            print(f"💾 salvo: {event['symbol']} {event['interval']} open_time={event['open_time']}")
 
         except Exception as e:
             print(f"⚠️  WS erro: {e} — reconectando em {backoff}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
+
 
 import urllib.parse
 
