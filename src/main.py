@@ -5,6 +5,8 @@ from src.config import LOG_LEVEL
 from src.utils.logging import setup_logging
 from src.telegram_bot import send_message
 from src.datafeeds.market_caps import fetch_global_caps
+from src.storage.init_db import init_db
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -14,6 +16,7 @@ def main():
     parser.add_argument("--ws-multi", action="store_true",
                     help="Conecta no WS (BTCUSDT) para 4h, 1d, 1w, 1M.")
     parser.add_argument("--caps-test", action="store_true", help="Consulta TOTAL/ALT MCAP e dominâncias (CoinGecko).")
+    parser.add_argument("--init-db", action="store_true", help="Cria as tabelas SQLite (candles, market_caps).")
     args = parser.parse_args()
 
     logger = setup_logging(LOG_LEVEL)
@@ -40,6 +43,11 @@ def main():
     if args.caps_test:
         data = fetch_global_caps()
         logger.info(f"Market caps: {data}")
+        return
+
+    if args.init_db:
+        init_db()
+        logger.info("Banco inicializado (tabelas criadas).")
         return
 
     logger.info("Bot carregado (modo %s).", "dry-run" if args.dry_run else "live")
