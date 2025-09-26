@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from src.config import LOG_LEVEL
 from src.utils.logging import setup_logging
 from src.telegram_bot import send_message
+from src.datafeeds.market_caps import fetch_global_caps
 
 def main():
     parser = argparse.ArgumentParser()
@@ -12,6 +13,7 @@ def main():
     parser.add_argument("--ws-test", action="store_true", help="Conecta no WS da Binance (BTCUSDT 1m).")
     parser.add_argument("--ws-multi", action="store_true",
                     help="Conecta no WS (BTCUSDT) para 4h, 1d, 1w, 1M.")
+    parser.add_argument("--caps-test", action="store_true", help="Consulta TOTAL/ALT MCAP e dominâncias (CoinGecko).")
     args = parser.parse_args()
 
     logger = setup_logging(LOG_LEVEL)
@@ -33,6 +35,11 @@ def main():
         msg = f"SMARTMONEY BRASIL: online ({ts})"
         ok = send_message(msg)
         logger.info(f"Ping enviado? {ok}")
+        return
+
+    if args.caps_test:
+        data = fetch_global_caps()
+        logger.info(f"Market caps: {data}")
         return
 
     logger.info("Bot carregado (modo %s).", "dry-run" if args.dry_run else "live")
