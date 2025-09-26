@@ -10,6 +10,25 @@ from websockets.exceptions import (
 
 import websockets
 
+def normalize_kline(symbol: str, data: dict) -> dict:
+    """
+    Converte o kline da Binance (chave 'k') no formato padrão do projeto.
+    Espera um dict com a chave 'k' (data['k']).
+    """
+    k = data["k"]
+    return {
+        "symbol": symbol.upper(),
+        "interval": k["i"],                        # "4h" | "1d" | "1w" | "1M"
+        "open_time": int(k["t"]),                  # ms UTC
+        "close_time": int(k["T"]),                 # ms UTC
+        "open": float(k["o"]),
+        "high": float(k["h"]),
+        "low": float(k["l"]),
+        "close": float(k["c"]),
+        "volume": float(k["v"]),
+        "is_closed": bool(k["x"]),
+    }
+
 BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws"
 
 
@@ -120,12 +139,11 @@ async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = No
                     o, h, l, c = k["o"], k["h"], k["l"], k["c"]
                     v = k["v"]
                     closed = k["x"]
+                    
+                    event = normalize_kline(symbol, data)
+                    print(event)
 
-                    print(
-                        f"[{event_ts:%Y-%m-%d %H:%M:%S} UTC] {symbol} {itv:<2} "
-                        f"O:{o} H:{h} L:{l} C:{c} V:{v} closed={closed}"
-                    )
-
+        
         except (ConnectionClosed, ConnectionClosedError, ConnectionClosedOK, InvalidStatus, WebSocketException) as e:
             # desconexões "normais" do WS
             jitter = random.uniform(0.8, 1.2)
