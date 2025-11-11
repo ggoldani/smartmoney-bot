@@ -3,7 +3,7 @@ Alert Rules Engine - monitors candles and triggers alerts.
 This is the core of the bot's alerting system.
 """
 import asyncio
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 from datetime import datetime
 from loguru import logger
 
@@ -11,13 +11,19 @@ from src.config import (
     get_symbols,
     is_indicator_enabled,
     get_rsi_config,
+    get_breakout_config,
     get_alert_config
 )
 from src.indicators.rsi import analyze_rsi, analyze_rsi_all_timeframes
+from src.indicators.breakouts import check_breakout
 from src.notif.templates import (
     template_rsi_overbought,
     template_rsi_oversold,
+    template_rsi_extreme_overbought,
+    template_rsi_extreme_oversold,
     template_rsi_multi_tf,
+    template_breakout_bull,
+    template_breakout_bear,
     template_circuit_breaker
 )
 from src.notif.throttle import get_throttler
@@ -46,8 +52,14 @@ class AlertEngine:
         # key: "BTCUSDT_4h_1762891200000_OVERSOLD", value: True
         self.alerted_candles: Dict[str, bool] = {}
 
+        # Track last condition per symbol/interval to prevent spam
+        # key: "BTCUSDT_1h_RSI", value: "OVERSOLD" | "OVERBOUGHT" | None
+        # key: "BTCUSDT_1d_BREAKOUT", value: "BULL" | "BEAR" | None
+        self.last_condition: Dict[str, Optional[str]] = {}
+
         # Load config
         self.rsi_config = get_rsi_config()
+        self.breakout_config = get_breakout_config()
         self.alert_config = get_alert_config()
         self.throttler = get_throttler()
 
@@ -110,6 +122,7 @@ class AlertEngine:
     async def process_rsi_alerts(self, symbol: str, interval: str, open_time: int):
         """
         Check RSI for given symbol/interval and send alert if needed.
+        Includes anti-spam protection: only alerts again after RSI recovers to neutral zone.
 
         Args:
             symbol: Trading pair (e.g., BTCUSDT)
@@ -131,17 +144,135 @@ class AlertEngine:
 
         result = analyze_rsi(symbol, interval, overbought, oversold, period)
 
-        if not result or result["condition"] == "NORMAL":
+        if not result:
+            return
+
+        # Track condition state for anti-spam
+        condition_tracker_key = f"{symbol}_{interval}_RSI"
+        current_condition = result["condition"]
+        current_rsi = result["rsi"]
+        last_condition = self.last_condition.get(condition_tracker_key)
+
+        # RECOVERY ZONES (to reset alert permission):
+        # - For OVERSOLD: RSI must go above 35 to reset
+        # - For OVERBOUGHT: RSI must go below 65 to reset
+        RECOVERY_OVERSOLD_THRESHOLD = 35
+        RECOVERY_OVERBOUGHT_THRESHOLD = 65
+
+        # Check if RSI is in recovery/neutral zone
+        if RECOVERY_OVERSOLD_THRESHOLD < current_rsi < RECOVERY_OVERBOUGHT_THRESHOLD:
+            # RSI is neutral - reset condition tracker
+            if last_condition is not None:
+                logger.debug(f"RSI recovery detected for {symbol} {interval}: RSI={current_rsi:.2f} (was {last_condition})")
+                self.last_condition[condition_tracker_key] = None
+            return  # No alert in neutral zone
+
+        # If current condition is NORMAL, nothing to alert
+        if current_condition == "NORMAL":
+            return
+
+        # ANTI-SPAM LOGIC: Check if we can alert
+        # Only alert if:
+        # 1. Never alerted this condition before (last_condition is None or different)
+        # 2. OR condition was reset (went through recovery zone)
+        if last_condition == current_condition:
+            # Same condition as before, no recovery happened - SKIP ALERT (anti-spam)
+            logger.debug(f"Anti-spam: {symbol} {interval} still {current_condition}, RSI={current_rsi:.2f} (no recovery)")
             return
 
         # Check if we already alerted for this specific candle + condition
-        alert_key = f"{symbol}_{interval}_{open_time}_{result['condition']}"
+        alert_key = f"{symbol}_{interval}_{open_time}_{current_condition}"
         if alert_key in self.alerted_candles:
             # Already alerted for this candle, skip
             return
 
         # Prepare alert
-        condition_key = f"RSI_{result['condition']}_{interval}"
+        condition_key = f"RSI_{current_condition}_{interval}"
+
+        # Check throttling
+        can_send, reason = self.throttler.can_send_alert(condition_key)
+        if not can_send:
+            logger.info(f"Alert throttled: {condition_key} - {reason}")
+            return
+
+        # Generate message based on condition
+        if current_condition == "EXTREME_OVERBOUGHT":
+            message = template_rsi_extreme_overbought(result)
+        elif current_condition == "EXTREME_OVERSOLD":
+            message = template_rsi_extreme_oversold(result)
+        elif current_condition == "OVERBOUGHT":
+            message = template_rsi_overbought(result)
+        elif current_condition == "OVERSOLD":
+            message = template_rsi_oversold(result)
+        else:
+            return  # Should not happen, but safety check
+
+        # Send alert
+        success = send_message(message)
+
+        if success:
+            self.throttler.record_alert(condition_key)
+            self.alerted_candles[alert_key] = True  # Mark as alerted
+            self.last_condition[condition_tracker_key] = current_condition  # Update last condition
+            logger.info(f"Alert sent: {condition_key} - RSI={result['rsi']:.2f} (candle {open_time})")
+        else:
+            logger.error(f"Failed to send alert: {condition_key}")
+
+    async def process_breakout_alerts(self, symbol: str, interval: str,
+                                      current_price: float, open_time: int):
+        """
+        Check for breakout (current price breaking previous candle's high/low).
+        Includes anti-spam protection: only alerts again after price returns to range.
+
+        Args:
+            symbol: Trading pair (e.g., BTCUSDT)
+            interval: Timeframe (e.g., 1d)
+            current_price: Current market price
+            open_time: Current candle open_time to track if we already alerted
+        """
+        if not is_indicator_enabled('breakout'):
+            return
+
+        # Check if this timeframe is configured for breakouts
+        breakout_timeframes = self.breakout_config.get('timeframes', [])
+        if interval not in breakout_timeframes:
+            return
+
+        # Check for breakout
+        margin_pct = self.breakout_config.get('margin_percent', 0.1)
+        result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
+
+        # Track condition state for anti-spam
+        condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
+        last_breakout = self.last_condition.get(condition_tracker_key)
+
+        if not result:
+            # No breakout - price is back in range
+            # Reset condition tracker (recovery detected)
+            if last_breakout is not None:
+                logger.debug(f"Breakout recovery detected for {symbol} {interval}: price back in range (was {last_breakout})")
+                self.last_condition[condition_tracker_key] = None
+            return
+
+        current_breakout_type = result['type']
+
+        # ANTI-SPAM LOGIC: Check if we can alert
+        # Only alert if:
+        # 1. Never alerted this breakout type before (last_breakout is None or different)
+        # 2. OR breakout was reset (price went back to range)
+        if last_breakout == current_breakout_type:
+            # Same breakout as before, no recovery happened - SKIP ALERT (anti-spam)
+            logger.debug(f"Anti-spam: {symbol} {interval} still in {current_breakout_type} breakout (no recovery)")
+            return
+
+        # Check if we already alerted for this specific candle + breakout type
+        alert_key = f"{symbol}_{interval}_{open_time}_BREAKOUT_{current_breakout_type}"
+        if alert_key in self.alerted_candles:
+            # Already alerted for this breakout, skip
+            return
+
+        # Prepare alert
+        condition_key = f"BREAKOUT_{current_breakout_type}_{interval}"
 
         # Check throttling
         can_send, reason = self.throttler.can_send_alert(condition_key)
@@ -150,10 +281,10 @@ class AlertEngine:
             return
 
         # Generate message
-        if result["condition"] == "OVERBOUGHT":
-            message = template_rsi_overbought(result)
-        else:  # OVERSOLD
-            message = template_rsi_oversold(result)
+        if current_breakout_type == "BULL":
+            message = template_breakout_bull(result)
+        else:  # BEAR
+            message = template_breakout_bear(result)
 
         # Send alert
         success = send_message(message)
@@ -161,7 +292,8 @@ class AlertEngine:
         if success:
             self.throttler.record_alert(condition_key)
             self.alerted_candles[alert_key] = True  # Mark as alerted
-            logger.info(f"Alert sent: {condition_key} - RSI={result['rsi']:.2f} (candle {open_time})")
+            self.last_condition[condition_tracker_key] = current_breakout_type  # Update last breakout
+            logger.info(f"Alert sent: {condition_key} - Price={result['price']:.2f} (candle {open_time})")
         else:
             logger.error(f"Failed to send alert: {condition_key}")
 
@@ -218,6 +350,7 @@ class AlertEngine:
         symbol = candle_data["symbol"]
         interval = candle_data["interval"]
         open_time = candle_data["open_time"]
+        current_price = candle_data["close"]  # Current price = close of current candle
         is_closed = candle_data.get("is_closed", False)
 
         status = "CLOSED" if is_closed else "OPEN"
@@ -225,6 +358,9 @@ class AlertEngine:
 
         # Check individual RSI alert for this timeframe (works on open candles too)
         await self.process_rsi_alerts(symbol, interval, open_time)
+
+        # Check for breakout alerts (real-time price breaking previous candle high/low)
+        await self.process_breakout_alerts(symbol, interval, current_price, open_time)
 
         # After processing individual alerts, check for multi-TF consolidation
         # (only run once per symbol, not per candle)

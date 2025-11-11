@@ -104,10 +104,13 @@ def analyze_rsi(
     interval: str,
     overbought: float = 70,
     oversold: float = 30,
-    period: int = 14
+    period: int = 14,
+    extreme_overbought: float = 85,
+    extreme_oversold: float = 15
 ) -> Optional[Dict]:
     """
     Analyze RSI for given symbol/interval and check if overbought/oversold.
+    Now supports 2 levels: normal (70/30) and EXTREME (85/15).
 
     Args:
         symbol: Trading pair (e.g., "BTCUSDT")
@@ -115,6 +118,8 @@ def analyze_rsi(
         overbought: RSI threshold for overbought (default 70)
         oversold: RSI threshold for oversold (default 30)
         period: RSI period (default 14)
+        extreme_overbought: RSI threshold for EXTREME overbought (default 85)
+        extreme_oversold: RSI threshold for EXTREME oversold (default 15)
 
     Returns:
         Dict with analysis result or None if insufficient data
@@ -125,7 +130,7 @@ def analyze_rsi(
             "rsi": 75.3,
             "overbought": True,
             "oversold": False,
-            "condition": "OVERBOUGHT",  # or "OVERSOLD" or "NORMAL"
+            "condition": "OVERBOUGHT",  # or "OVERSOLD" or "EXTREME_OVERBOUGHT" or "EXTREME_OVERSOLD" or "NORMAL"
             "price": 67420.50
         }
     """
@@ -142,16 +147,25 @@ def analyze_rsi(
     if rsi is None:
         return None
 
-    # Determine condition
-    is_overbought = rsi > overbought
-    is_oversold = rsi < oversold
+    # Determine condition (check EXTREME first, then normal)
+    is_overbought = False
+    is_oversold = False
+    condition = "NORMAL"
 
-    if is_overbought:
+    # Check EXTREME conditions first
+    if rsi > extreme_overbought:
+        condition = "EXTREME_OVERBOUGHT"
+        is_overbought = True
+    elif rsi < extreme_oversold:
+        condition = "EXTREME_OVERSOLD"
+        is_oversold = True
+    # Check normal conditions
+    elif rsi > overbought:
         condition = "OVERBOUGHT"
-    elif is_oversold:
+        is_overbought = True
+    elif rsi < oversold:
         condition = "OVERSOLD"
-    else:
-        condition = "NORMAL"
+        is_oversold = True
 
     # Get current price (last close)
     current_price = closes[-1]

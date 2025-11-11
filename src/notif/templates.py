@@ -17,7 +17,7 @@ from src.config import get_bot_name, get_bot_version
 # Disclaimer para todos os alertas
 ALERT_DISCLAIMER = """
 ⚠️ IMPORTANTE: Este é apenas um alerta de condição de mercado.
-NÃO É recomendação de compra ou venda. DYOR (Do Your Own Research)."""
+NÃO É recomendação de compra ou venda. DYOR."""
 
 
 def template_rsi_overbought(data: Dict) -> str:
@@ -69,6 +69,58 @@ RSI: {rsi}
 {ALERT_DISCLAIMER}"""
 
 
+def template_rsi_extreme_overbought(data: Dict) -> str:
+    """
+    Template for EXTREME RSI overbought alert (RSI > 85).
+
+    Args:
+        data: Same as template_rsi_overbought
+    """
+    symbol = format_symbol_display(data["symbol"])
+    timeframe = format_timeframe_display(data["interval"])
+    rsi = format_rsi_value(data["rsi"])
+    price = format_price_br(data["price"])
+    timestamp = format_datetime_br()
+
+    return f"""🚨🔴 RSI EXTREMAMENTE SOBRECOMPRADO! ({timeframe})
+
+⚠️ CONDIÇÃO EXTREMA DETECTADA!
+{symbol}: {price}
+RSI: {rsi}
+
+🔥 Mercado pode estar em topo absoluto!
+⚡ Atenção redobrada!
+
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
+
+
+def template_rsi_extreme_oversold(data: Dict) -> str:
+    """
+    Template for EXTREME RSI oversold alert (RSI < 15).
+
+    Args:
+        data: Same as template_rsi_overbought
+    """
+    symbol = format_symbol_display(data["symbol"])
+    timeframe = format_timeframe_display(data["interval"])
+    rsi = format_rsi_value(data["rsi"])
+    price = format_price_br(data["price"])
+    timestamp = format_datetime_br()
+
+    return f"""🚨🟢 RSI EXTREMAMENTE SOBREVENDIDO! ({timeframe})
+
+⚠️ CONDIÇÃO EXTREMA DETECTADA!
+{symbol}: {price}
+RSI: {rsi}
+
+🔥 Mercado pode estar em fundo absoluto!
+⚡ Atenção redobrada!
+
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
+
+
 def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
     """
     Template for multi-timeframe RSI critical alert (consolidation).
@@ -113,7 +165,7 @@ Condições detectadas:
 
 def template_breakout_bull(data: Dict) -> str:
     """
-    Template for bullish breakout alert.
+    Template for bullish breakout alert (real-time).
 
     Args:
         data: {
@@ -131,9 +183,10 @@ def template_breakout_bull(data: Dict) -> str:
     change_pct = format_percentage_br(data["change_pct"])
     timestamp = format_datetime_br()
 
-    return f"""🚀 Rompimento de Alta ({timeframe})
+    return f"""🚀 ROMPIMENTO DE ALTA AGORA! ({timeframe})
 
-{symbol} rompeu a máxima anterior!
+⚡ {symbol} está rompendo a máxima anterior AGORA!
+👀 Observe o price action!
 
 Preço atual: {price}
 Máxima anterior: {prev_high}
@@ -145,7 +198,7 @@ Variação: +{change_pct}
 
 def template_breakout_bear(data: Dict) -> str:
     """
-    Template for bearish breakdown alert.
+    Template for bearish breakdown alert (real-time).
 
     Args:
         data: Similar to template_breakout_bull but with "prev_low"
@@ -157,9 +210,10 @@ def template_breakout_bear(data: Dict) -> str:
     change_pct = format_percentage_br(abs(data["change_pct"]))
     timestamp = format_datetime_br()
 
-    return f"""📉 Rompimento de Baixa ({timeframe})
+    return f"""📉 ROMPIMENTO DE BAIXA AGORA! ({timeframe})
 
-{symbol} rompeu a mínima anterior!
+⚡ {symbol} está rompendo a mínima anterior AGORA!
+👀 Observe o price action!
 
 Preço atual: {price}
 Mínima anterior: {prev_low}

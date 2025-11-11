@@ -20,7 +20,9 @@ from src.datafeeds.market_caps import fetch_global_caps
 from src.datafeeds.binance_rest import backfill_all_symbols
 from src.datafeeds.binance_ws import listen_multi_klines
 from src.storage.init_db import init_db
+from src.storage.cleanup import schedule_cleanup_task
 from src.rules.engine import get_alert_engine
+from src.utils.healthcheck import get_healthcheck
 from src.notif.templates import template_startup, template_shutdown
 
 
@@ -144,15 +146,18 @@ async def run_bot():
     symbol = first_symbol["name"]
     timeframes = first_symbol["timeframes"]
 
-    logger.info(f"Starting main bot tasks: WebSocket ({symbol}) + Alert Engine")
+    logger.info(f"Starting main bot tasks: WebSocket ({symbol}) + Alert Engine + DB Cleanup + Healthcheck")
 
-    # Start alert engine
+    # Start alert engine and healthcheck server
     alert_engine = get_alert_engine()
+    healthcheck = get_healthcheck()
 
     # Create tasks
     tasks = [
         asyncio.create_task(listen_multi_klines(symbol, timeframes), name="WebSocket"),
         asyncio.create_task(alert_engine.run(), name="AlertEngine"),
+        asyncio.create_task(schedule_cleanup_task(), name="DBCleanup"),
+        asyncio.create_task(healthcheck.run(), name="Healthcheck"),
         asyncio.create_task(shutdown_event.wait(), name="ShutdownWatcher")
     ]
 
