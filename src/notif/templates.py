@@ -14,6 +14,11 @@ from src.notif.formatter import (
 )
 from src.config import get_bot_name, get_bot_version
 
+# Disclaimer para todos os alertas
+ALERT_DISCLAIMER = """
+⚠️ IMPORTANTE: Este é apenas um alerta de condição de mercado.
+NÃO É recomendação de compra ou venda. DYOR (Do Your Own Research)."""
+
 
 def template_rsi_overbought(data: Dict) -> str:
     """
@@ -38,7 +43,8 @@ def template_rsi_overbought(data: Dict) -> str:
 {symbol}: {price}
 RSI: {rsi}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
 
 
 def template_rsi_oversold(data: Dict) -> str:
@@ -59,7 +65,8 @@ def template_rsi_oversold(data: Dict) -> str:
 {symbol}: {price}
 RSI: {rsi}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
 
 
 def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
@@ -100,7 +107,8 @@ def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
 Condições detectadas:
 {tf_list}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
 
 
 def template_breakout_bull(data: Dict) -> str:
@@ -131,7 +139,8 @@ Preço atual: {price}
 Máxima anterior: {prev_high}
 Variação: +{change_pct}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
 
 
 def template_breakout_bear(data: Dict) -> str:
@@ -156,7 +165,8 @@ Preço atual: {price}
 Mínima anterior: {prev_low}
 Variação: -{change_pct}
 
-⏰ {timestamp}"""
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
 
 
 def template_circuit_breaker(alert_count: int, conditions: List[str]) -> str:

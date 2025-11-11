@@ -1,8 +1,10 @@
 # src/datafeeds/binance_ws.py
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 import random
+from typing import Dict
 from websockets.exceptions import (
     ConnectionClosed, ConnectionClosedError, ConnectionClosedOK,
     InvalidStatus, WebSocketException
@@ -10,6 +12,35 @@ from websockets.exceptions import (
 from src.storage.repo import save_candle_event
 
 import websockets
+
+# Throttle de database writes (evita UPDATE a cada tick)
+# key: "BTCUSDT_1h_1762891200000", value: timestamp
+_last_save_time: Dict[str, float] = {}
+SAVE_THROTTLE_SECONDS = 10  # Salvar velas abertas a cada 10 segundos max
+
+def _should_save_candle(event: dict) -> bool:
+    """
+    Decide se deve salvar vela no DB baseado em throttle.
+
+    Regras:
+    1. Se vela fechou (is_closed=True): SEMPRE salva
+    2. Se vela aberta: salva apenas se passou SAVE_THROTTLE_SECONDS desde último save
+
+    Isso reduz writes ao DB de ~100/min para ~6/min por timeframe (velas abertas).
+    """
+    if event.get("is_closed"):
+        return True  # Velas fechadas sempre salvam
+
+    # Vela aberta: verificar throttle
+    key = f"{event['symbol']}_{event['interval']}_{event['open_time']}"
+    now = time.time()
+    last_save = _last_save_time.get(key, 0)
+
+    if now - last_save >= SAVE_THROTTLE_SECONDS:
+        _last_save_time[key] = now
+        return True
+
+    return False
 
 def normalize_kline(symbol: str, data: dict) -> dict:
     """
@@ -68,11 +99,11 @@ async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
                     event = normalize_kline(symbol, msg)  # msg tem {"k": {...}}
                     print(event)
 
-                    # 💾 salva somente se fechou
-                    if event["is_closed"]:
+                    # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
+                    if _should_save_candle(event):
                         saved = save_candle_event(event)
-                        if saved:
-                            print(f"💾 salvo: {event['symbol']} {event['interval']} open_time={event['open_time']}")
+                        if saved and event["is_closed"]:
+                            print(f"💾 vela fechada salva: {event['symbol']} {event['interval']} open_time={event['open_time']}")
 
         except Exception as e:
             print(f"⚠️  WS erro: {e} — reconectando em {backoff}s")
@@ -138,14 +169,15 @@ async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = No
                         continue
 
                     last_msg_ts = datetime.now(timezone.utc)
-                    itv = k.get("i")  # "4h", "1d", "1w", "1M"
-                    event_ts = datetime.fromtimestamp(data["E"] / 1000, tz=timezone.utc)
-                    o, h, l, c = k["o"], k["h"], k["l"], k["c"]
-                    v = k["v"]
-                    closed = k["x"]
-                    
+
                     event = normalize_kline(symbol, data)
                     print(event)
+
+                    # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
+                    if _should_save_candle(event):
+                        saved = save_candle_event(event)
+                        if saved and event["is_closed"]:
+                            print(f"💾 vela fechada salva: {event['symbol']} {event['interval']} open_time={event['open_time']}")
 
         
         except (ConnectionClosed, ConnectionClosedError, ConnectionClosedOK, InvalidStatus, WebSocketException) as e:

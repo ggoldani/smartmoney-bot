@@ -31,8 +31,9 @@ indicators:
     oversold: 30
     # Timeframes to calculate RSI for (subset of symbol timeframes)
     timeframes: ["1h", "4h", "1d"]
-    # Alert only when candle closes (not intra-candle)
-    alert_on_close: true
+    # Alert when RSI touches threshold (during candle, not only on close)
+    # This catches extreme moments even if candle recovers before closing
+    alert_on_touch: true
 
   breakout:
     enabled: true

@@ -5,13 +5,13 @@ from .models import Candle
 
 def save_candle_event(event: Dict) -> bool:
     """
-    Salva um candle (somente fechado) na tabela candles.
-    Ignora se já existir (unique: symbol, interval, open_time).
+    Salva/atualiza um candle (aberto ou fechado) na tabela candles.
+    Se já existir (unique: symbol, interval, open_time), atualiza os valores.
+    Isso permite atualizar velas abertas conforme evoluem.
     """
-    if not event.get("is_closed"):
-        return False
-
     with SessionLocal() as session:
+        is_closed_val = 1 if event.get("is_closed") else 0
+
         stmt = insert(Candle).values(
             symbol=event["symbol"],
             interval=event["interval"],
@@ -22,9 +22,17 @@ def save_candle_event(event: Dict) -> bool:
             low=float(event["low"]),
             close=float(event["close"]),
             volume=float(event.get("volume", 0.0)),
-            is_closed=1,
-        ).on_conflict_do_nothing(
-            index_elements=["symbol", "interval", "open_time"]
+            is_closed=is_closed_val,
+        ).on_conflict_do_update(
+            index_elements=["symbol", "interval", "open_time"],
+            set_={
+                "close_time": int(event["close_time"]),
+                "high": float(event["high"]),
+                "low": float(event["low"]),
+                "close": float(event["close"]),
+                "volume": float(event.get("volume", 0.0)),
+                "is_closed": is_closed_val,
+            }
         )
         session.execute(stmt)
         session.commit()

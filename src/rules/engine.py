@@ -42,6 +42,10 @@ class AlertEngine:
         # Track last processed candle per symbol/interval to avoid duplicates
         self.last_processed: Dict[str, int] = {}  # key: "BTCUSDT_4h", value: open_time
 
+        # Track which candles already triggered alerts (to avoid spam during same candle)
+        # key: "BTCUSDT_4h_1762891200000_OVERSOLD", value: True
+        self.alerted_candles: Dict[str, bool] = {}
+
         # Load config
         self.rsi_config = get_rsi_config()
         self.alert_config = get_alert_config()
@@ -53,11 +57,11 @@ class AlertEngine:
 
     async def check_for_new_candles(self):
         """
-        Check database for new closed candles since last check.
-        Returns list of new candles to process.
+        Check database for latest candles (open OR closed) since last check.
+        Returns list of candles to process.
         """
         symbols = get_symbols()
-        new_candles = []
+        candles_to_process = []
 
         with SessionLocal() as session:
             for sym_config in symbols:
@@ -68,33 +72,49 @@ class AlertEngine:
                     key = self._get_candle_key(symbol, interval)
                     last_open_time = self.last_processed.get(key, 0)
 
-                    # Query for candles newer than last processed
+                    # Query for LATEST candle (open or closed), not just closed ones
                     candle = session.query(Candle).filter(
                         Candle.symbol == symbol,
-                        Candle.interval == interval,
-                        Candle.is_closed == 1,
-                        Candle.open_time > last_open_time
+                        Candle.interval == interval
                     ).order_by(Candle.open_time.desc()).first()
 
-                    if candle:
-                        new_candles.append({
+                    if candle and candle.open_time >= last_open_time:
+                        candles_to_process.append({
                             "symbol": candle.symbol,
                             "interval": candle.interval,
                             "open_time": candle.open_time,
-                            "close": candle.close
+                            "close": candle.close,
+                            "is_closed": candle.is_closed
                         })
 
-                        # Update last processed
-                        self.last_processed[key] = candle.open_time
+                        # Update last processed only if it's a different candle
+                        if candle.open_time > last_open_time:
+                            self.last_processed[key] = candle.open_time
+                            # Clear alert history for this symbol/interval (new candle started)
+                            self._clear_candle_alerts(symbol, interval, last_open_time)
 
-        if new_candles:
-            logger.debug(f"Found {len(new_candles)} new closed candles")
+        if candles_to_process:
+            logger.debug(f"Processing {len(candles_to_process)} candles (open or closed)")
 
-        return new_candles
+        return candles_to_process
 
-    async def process_rsi_alerts(self, symbol: str, interval: str):
+    def _clear_candle_alerts(self, symbol: str, interval: str, old_open_time: int):
+        """Clear alert flags for old candle when new candle starts."""
+        prefix = f"{symbol}_{interval}_{old_open_time}_"
+        keys_to_remove = [k for k in self.alerted_candles.keys() if k.startswith(prefix)]
+        for key in keys_to_remove:
+            del self.alerted_candles[key]
+        if keys_to_remove:
+            logger.debug(f"Cleared {len(keys_to_remove)} alert flags for old candle")
+
+    async def process_rsi_alerts(self, symbol: str, interval: str, open_time: int):
         """
         Check RSI for given symbol/interval and send alert if needed.
+
+        Args:
+            symbol: Trading pair (e.g., BTCUSDT)
+            interval: Timeframe (e.g., 1h)
+            open_time: Candle open_time to track if we already alerted
         """
         if not is_indicator_enabled('rsi'):
             return
@@ -112,6 +132,12 @@ class AlertEngine:
         result = analyze_rsi(symbol, interval, overbought, oversold, period)
 
         if not result or result["condition"] == "NORMAL":
+            return
+
+        # Check if we already alerted for this specific candle + condition
+        alert_key = f"{symbol}_{interval}_{open_time}_{result['condition']}"
+        if alert_key in self.alerted_candles:
+            # Already alerted for this candle, skip
             return
 
         # Prepare alert
@@ -134,7 +160,8 @@ class AlertEngine:
 
         if success:
             self.throttler.record_alert(condition_key)
-            logger.info(f"Alert sent: {condition_key} - RSI={result['rsi']:.2f}")
+            self.alerted_candles[alert_key] = True  # Mark as alerted
+            logger.info(f"Alert sent: {condition_key} - RSI={result['rsi']:.2f} (candle {open_time})")
         else:
             logger.error(f"Failed to send alert: {condition_key}")
 
@@ -182,18 +209,22 @@ class AlertEngine:
 
     async def process_candle(self, candle_data: Dict):
         """
-        Process a new closed candle and check all applicable rules.
+        Process a candle (open or closed) and check all applicable rules.
 
         Args:
-            candle_data: {"symbol": "BTCUSDT", "interval": "4h", "open_time": ..., "close": ...}
+            candle_data: {"symbol": "BTCUSDT", "interval": "4h", "open_time": ...,
+                          "close": ..., "is_closed": bool}
         """
         symbol = candle_data["symbol"]
         interval = candle_data["interval"]
+        open_time = candle_data["open_time"]
+        is_closed = candle_data.get("is_closed", False)
 
-        logger.debug(f"Processing candle: {symbol} {interval}")
+        status = "CLOSED" if is_closed else "OPEN"
+        logger.debug(f"Processing candle: {symbol} {interval} ({status})")
 
-        # Check individual RSI alert for this timeframe
-        await self.process_rsi_alerts(symbol, interval)
+        # Check individual RSI alert for this timeframe (works on open candles too)
+        await self.process_rsi_alerts(symbol, interval, open_time)
 
         # After processing individual alerts, check for multi-TF consolidation
         # (only run once per symbol, not per candle)
