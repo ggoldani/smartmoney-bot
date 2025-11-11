@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Alert throttling and circuit breaker to prevent spam.
 Tracks alert history and enforces rate limits.
@@ -78,7 +79,7 @@ class AlertThrottler:
         hourly_count = self.global_history.count_in_last_hour()
         if hourly_count >= self.max_alerts_per_hour:
             logger.warning(f"Throttled: {hourly_count} alerts in last hour (max {self.max_alerts_per_hour})")
-            return False, f"Limite hor·rio atingido ({hourly_count}/{self.max_alerts_per_hour})"
+            return False, f"Limite hor√°rio atingido ({hourly_count}/{self.max_alerts_per_hour})"
 
         # Check global per-minute limit (circuit breaker)
         if self.circuit_breaker_enabled:

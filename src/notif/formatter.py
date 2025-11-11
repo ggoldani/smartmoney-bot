@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Brazilian formatting utilities for alerts.
 Handles timezone conversion, number formatting, and date formatting.
@@ -153,6 +154,6 @@ def format_timeframe_display(interval: str) -> str:
         "1d": "1 dia",
         "3d": "3 dias",
         "1w": "1 semana",
-        "1M": "1 mês"
+        "1M": "1 mÃªs"
     }
     return mapping.get(interval, interval)

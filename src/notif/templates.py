@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Message templates for Telegram alerts in Portuguese (Brazil).
 All messages use Brazilian formatting for numbers, dates, and currency.
@@ -32,12 +33,12 @@ def template_rsi_overbought(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""=4 RSI Sobrecomprado ({timeframe})
+    return f"""ğŸ”´ RSI Sobrecomprado ({timeframe})
 
 {symbol}: {price}
 RSI: {rsi}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_rsi_oversold(data: Dict) -> str:
@@ -53,12 +54,12 @@ def template_rsi_oversold(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""=â RSI Sobrevendido ({timeframe})
+    return f"""ğŸŸ¢ RSI Sobrevendido ({timeframe})
 
 {symbol}: {price}
 RSI: {rsi}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
@@ -85,21 +86,21 @@ def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
     for cond in critical_conditions:
         tf = format_timeframe_display(cond["interval"])
         rsi = format_rsi_value(cond["rsi"])
-        emoji = "=4" if cond["condition"] == "OVERBOUGHT" else "=â"
+        emoji = "ğŸ”´" if cond["condition"] == "OVERBOUGHT" else "ğŸŸ¢"
         condition_text = "Sobrecomprado" if cond["condition"] == "OVERBOUGHT" else "Sobrevendido"
 
         tf_lines.append(f"  {emoji} {tf}: RSI {rsi} ({condition_text})")
 
     tf_list = "\n".join(tf_lines)
 
-    return f"""=¨ ALERTA: Múltiplos Timeframes Críticos
+    return f"""ğŸš¨ ALERTA: MÃºltiplos Timeframes CrÃ­ticos
 
 {symbol}: {price}
 
-Condições detectadas:
+CondiÃ§Ãµes detectadas:
 {tf_list}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_breakout_bull(data: Dict) -> str:
@@ -122,15 +123,15 @@ def template_breakout_bull(data: Dict) -> str:
     change_pct = format_percentage_br(data["change_pct"])
     timestamp = format_datetime_br()
 
-    return f"""=€ Rompimento de Alta ({timeframe})
+    return f"""ğŸš€ Rompimento de Alta ({timeframe})
 
-{symbol} rompeu a máxima anterior!
+{symbol} rompeu a mÃ¡xima anterior!
 
-Preço atual: {price}
-Máxima anterior: {prev_high}
-Variação: +{change_pct}
+PreÃ§o atual: {price}
+MÃ¡xima anterior: {prev_high}
+VariaÃ§Ã£o: +{change_pct}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_breakout_bear(data: Dict) -> str:
@@ -147,15 +148,15 @@ def template_breakout_bear(data: Dict) -> str:
     change_pct = format_percentage_br(abs(data["change_pct"]))
     timestamp = format_datetime_br()
 
-    return f"""=É Rompimento de Baixa ({timeframe})
+    return f"""ğŸ“‰ Rompimento de Baixa ({timeframe})
 
-{symbol} rompeu a mínima anterior!
+{symbol} rompeu a mÃ­nima anterior!
 
-Preço atual: {price}
-Mínima anterior: {prev_low}
-Variação: -{change_pct}
+PreÃ§o atual: {price}
+MÃ­nima anterior: {prev_low}
+VariaÃ§Ã£o: -{change_pct}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_circuit_breaker(alert_count: int, conditions: List[str]) -> str:
@@ -167,18 +168,18 @@ def template_circuit_breaker(alert_count: int, conditions: List[str]) -> str:
         conditions: List of condition descriptions
     """
     timestamp = format_datetime_br()
-    conditions_list = "\n".join([f"" {c}" for c in conditions])
+    conditions_list = "\n".join([f"â€¢ {c}" for c in conditions])
 
-    return f"""=¨ VOLATILIDADE EXTREMA DETECTADA
+    return f"""ğŸš¨ VOLATILIDADE EXTREMA DETECTADA
 
-  {alert_count} condições críticas atingidas simultaneamente!
+âš ï¸ {alert_count} condiÃ§Ãµes crÃ­ticas atingidas simultaneamente!
 
-Condições:
+CondiÃ§Ãµes:
 {conditions_list}
 
-=Ê Recomenda-se cautela e análise cuidadosa antes de operar.
+ğŸ“Š Recomenda-se cautela e anÃ¡lise cuidadosa antes de operar.
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_startup(timeframes: List[str], symbols: List[str]) -> str:
@@ -196,13 +197,13 @@ def template_startup(timeframes: List[str], symbols: List[str]) -> str:
     tf_display = ", ".join([format_timeframe_display(tf) for tf in timeframes])
     sym_display = ", ".join([format_symbol_display(s) for s in symbols])
 
-    return f""" {bot_name} Iniciado (v{version})
+    return f"""âœ… {bot_name} Iniciado (v{version})
 
-=Ê Monitorando: {sym_display}
-ñ Timeframes: {tf_display}
-= Alertas ativos: RSI, Rompimentos
+ğŸ“Š Monitorando: {sym_display}
+â±ï¸ Timeframes: {tf_display}
+ğŸ”” Alertas ativos: RSI, Rompimentos
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_shutdown() -> str:
@@ -210,12 +211,12 @@ def template_shutdown() -> str:
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    return f"""  {bot_name} Entrando em Manutenção
+    return f"""âš ï¸ {bot_name} Entrando em ManutenÃ§Ã£o
 
-O bot será reiniciado em breve.
-Alertas voltarão automaticamente após o restart.
+O bot serÃ¡ reiniciado em breve.
+Alertas voltarÃ£o automaticamente apÃ³s o restart.
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_error_admin(error_type: str, error_msg: str, context: str = "") -> str:
@@ -230,7 +231,7 @@ def template_error_admin(error_type: str, error_msg: str, context: str = "") -> 
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    msg = f"""L ERRO CRÍTICO - {error_type}
+    msg = f"""âŒ ERRO CRÃTICO - {error_type}
 
 Bot: {bot_name}
 Erro: {error_msg}"""
@@ -238,7 +239,7 @@ Erro: {error_msg}"""
     if context:
         msg += f"\nContexto: {context}"
 
-    msg += f"\n\nğ {timestamp}"
+    msg += f"\n\nâ° {timestamp}"
 
     return msg
 
@@ -254,12 +255,12 @@ def template_warning_admin(warning_type: str, warning_msg: str) -> str:
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    return f"""  AVISO - {warning_type}
+    return f"""âš ï¸ AVISO - {warning_type}
 
 Bot: {bot_name}
 Aviso: {warning_msg}
 
-ğ {timestamp}"""
+â° {timestamp}"""
 
 
 def template_backfill_complete(results: Dict[str, int]) -> str:
@@ -270,14 +271,14 @@ def template_backfill_complete(results: Dict[str, int]) -> str:
         results: {"1h": 200, "4h": 200, "1d": 200, "1w": 200}
     """
     total = sum(results.values())
-    details = "\n".join([f"  " {format_timeframe_display(tf)}: {count} velas"
+    details = "\n".join([f"  â€¢ {format_timeframe_display(tf)}: {count} velas"
                          for tf, count in results.items()])
 
-    return f""" Backfill Histórico Completado
+    return f"""âœ… Backfill HistÃ³rico Completado
 
 Total: {total} velas salvas
 
 Detalhes:
 {details}
 
-ğ {format_datetime_br()}"""
+â° {format_datetime_br()}"""
