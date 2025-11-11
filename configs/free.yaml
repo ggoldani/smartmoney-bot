@@ -1,0 +1,90 @@
+# SmartMoney Bot - Free Tier Configuration
+# This config is loaded on startup and defines all bot behavior
+
+bot:
+  tier: "free"
+  version: "1.0.0"
+  name: "SmartMoney Free Bot"
+
+telegram:
+  # Send startup message to group when bot starts
+  startup_message: true
+  # Send shutdown message when maintenance begins
+  shutdown_message: true
+
+# Symbols to monitor (free tier: BTCUSDT only)
+symbols:
+  - name: "BTCUSDT"
+    timeframes: ["1h", "4h", "1d", "1w"]
+
+# Historical data backfill on startup
+backfill:
+  enabled: true
+  candles_per_timeframe: 200
+
+# Technical indicators configuration
+indicators:
+  rsi:
+    enabled: true
+    period: 14
+    overbought: 70
+    oversold: 30
+    # Timeframes to calculate RSI for (subset of symbol timeframes)
+    timeframes: ["1h", "4h", "1d"]
+    # Alert only when candle closes (not intra-candle)
+    alert_on_close: true
+
+  breakout:
+    enabled: true
+    # Only monitor breakouts on daily and weekly
+    timeframes: ["1d", "1w"]
+    # Margin to avoid false positives (0.1% = 0.001)
+    margin_percent: 0.1
+    # Alert immediately when price touches level (not on close)
+    alert_on_touch: true
+
+# Alert configuration
+alerts:
+  # Language and locale
+  language: "pt-BR"
+  # Timezone for timestamps (BRT = UTC-3)
+  timezone: "America/Sao_Paulo"
+
+  # Consolidate multiple timeframe alerts into one message
+  consolidate_multi_tf: true
+
+  # Circuit breaker for extreme volatility
+  circuit_breaker:
+    enabled: true
+    # If more than N alerts in 1 minute, consolidate
+    max_alerts_per_minute: 5
+
+  # Throttling to prevent spam
+  throttling:
+    enabled: true
+    max_alerts_per_hour: 20
+
+  # Don't send alerts for conditions that happened while bot was offline
+  skip_retroactive_alerts: true
+
+# Database maintenance
+database:
+  cleanup:
+    enabled: true
+    # Cron schedule: Daily at 3AM UTC
+    schedule: "0 3 * * *"
+    # Delete candles older than N days
+    retention_days: 90
+    # But always keep at least N candles per timeframe
+    min_candles_per_tf: 200
+
+# Logging configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # Structured JSON logs for parsing
+  format: "json"
+  # Log rotation
+  rotation:
+    max_bytes: 10485760  # 10 MB
+    backup_count: 7      # Keep 7 files (70 MB total)

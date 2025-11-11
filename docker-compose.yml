@@ -1,11 +1,47 @@
+version: '3.8'
+
 services:
-  bot:
+  bot-free:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    container_name: smartmoney-bot-free
     env_file:
       - .env
     volumes:
       - ./src:/app/src
-      - ./docker-data:/app/data
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./configs:/app/configs:ro
+    environment:
+      - CONFIG_FILE=/app/configs/free.yaml
     restart: unless-stopped
+    # Run as non-root user (UID 1000)
+    user: "1000:1000"
+    # Resource limits for basic VPS
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Premium bot (Sprint 3 - commented for now)
+  # bot-premium:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile
+  #   container_name: smartmoney-bot-premium
+  #   env_file:
+  #     - .env.premium
+  #   volumes:
+  #     - ./src:/app/src
+  #     - ./data-premium:/app/data
+  #     - ./logs-premium:/app/logs
+  #     - ./configs:/app/configs:ro
+  #   environment:
+  #     - CONFIG_FILE=/app/configs/premium.yaml
+  #   restart: unless-stopped
+  #   user: "1000:1000"
