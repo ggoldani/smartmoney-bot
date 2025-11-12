@@ -62,6 +62,11 @@ check_debian_based() {
 
     source /etc/os-release
 
+    # Definir valores padrão para variáveis que podem não estar definidas
+    ID="${ID:-unknown}"
+    ID_LIKE="${ID_LIKE:-}"
+    VERSION_ID="${VERSION_ID:-unknown}"
+
     # Verifica se é Debian-based (Ubuntu, Debian, etc)
     if [[ "$ID_LIKE" != *"debian"* ]] && [[ "$ID" != "debian" ]] && [[ "$ID" != "ubuntu" ]]; then
         log_error "Este script requer uma distro Debian-based (Ubuntu, Debian, etc)"
@@ -181,6 +186,11 @@ install_docker() {
 
     # Detectar distro ID para repositório correto
     source /etc/os-release
+
+    # Definir valores padrão para variáveis que podem não estar definidas
+    ID="${ID:-unknown}"
+    VERSION_CODENAME="${VERSION_CODENAME:-}"
+
     DOCKER_DISTRO="$ID"
     if [[ "$ID" == "ubuntu" ]]; then
         DOCKER_DISTRO="ubuntu"
