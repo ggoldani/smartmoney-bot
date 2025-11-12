@@ -13,17 +13,20 @@ Documentação completa para futuras instâncias do Claude Code trabalhar neste 
 
 ### Modelo de Negócio
 
-**Tier FREE (atual - Sprint 1 completo):**
-- Alertas RSI (sobrecomprado/sobrevendido) em 1h, 4h, 1d
+**Tier FREE (atual - Sprint 2 completo):**
+- Alertas RSI em 2 níveis (normal 70/30, extremo 85/15) em 1h, 4h, 1d
+- Alertas de breakout em tempo real (1d, 1w)
+- Sistema anti-spam com recovery zones
 - Monitoramento de BTCUSDT apenas
 - Grupo Telegram público
 - Newsletter limitada
 
-**Tier PREMIUM (Sprint 3 - futuro):**
+**Tier PREMIUM (Sprint 3+ - futuro):**
 - Todos os alertas do FREE +
-- Alertas de breakout (rompimentos)
 - Multi-símbolos (ETHUSDT, SOLUSDT, etc.)
 - BTC Dominance alerts
+- Suporte/Resistência automático
+- Padrões de candles
 - Comandos admin customizados
 - Grupo Telegram VIP
 - Newsletter completa
@@ -70,11 +73,11 @@ smartmoney-bot/
 ├── src/
 │   ├── backtest/         # Sistema de backtesting (futuro)
 │   ├── datafeeds/        # Binance WebSocket + REST API
-│   ├── indicators/       # RSI, MA, breakouts, S/R levels
+│   ├── indicators/       # RSI (2 níveis), breakouts
 │   ├── notif/            # Templates Telegram + throttling
-│   ├── rules/            # Alert engine + rule definitions
-│   ├── storage/          # SQLite ORM (SQLAlchemy)
-│   ├── utils/            # Logging, healthcheck, timeframes
+│   ├── rules/            # Alert engine + anti-spam system
+│   ├── storage/          # SQLite ORM + cleanup automático
+│   ├── utils/            # Logging, healthcheck HTTP, timeframes
 │   ├── viz/              # Charts (futuro - mplfinance)
 │   ├── config.py         # YAML config loader
 │   ├── main.py           # Orquestração principal
@@ -99,29 +102,45 @@ smartmoney-bot/
   - Exponential backoff com jitter
   - Watchdog 90s para detectar conexão stalled
   - Multi-stream combinado (`btcusdt@kline_1h/btcusdt@kline_4h/...`)
+  - Database throttle: 10s para velas abertas, imediato para fechadas (94% redução I/O)
 
 #### 3. Storage (`src/storage/`)
 - **SQLite** com SQLAlchemy
 - Tabela `candles`: symbol, interval, OHLCV, timestamps
 - Unique constraint: `(symbol, interval, open_time)`
 - Indexes: otimização para queries RSI
+- **`cleanup.py`**: Limpeza automática
+  - Daily cronjob às 03:00 UTC
+  - Deleta velas > 90 dias
+  - Mantém mínimo 200 velas/TF
 
 #### 4. Indicators (`src/indicators/`)
 - **RSI** (`rsi.py`): Wilder's smoothing method (período 14)
   - `calculate_rsi(closes, period=14)` → float
-  - `get_latest_rsi(symbol, interval)` → RSI mais recente do DB
+  - `analyze_rsi()` → 2 níveis: NORMAL (70/30) + EXTREME (85/15)
+  - Condições: OVERSOLD, OVERBOUGHT, EXTREME_OVERSOLD, EXTREME_OVERBOUGHT
+- **Breakouts** (`breakouts.py`): Detecção em tempo real
+  - `check_breakout()` → BULL/BEAR quando preço rompe high/low anterior
+  - Margem 0.1% para evitar falsos positivos
 
 #### 5. Rules Engine (`src/rules/engine.py`)
-- Loop assíncrono verificando novas velas fechadas a cada 5s
-- Calcula RSI quando vela fecha (`is_closed=True`)
-- Verifica condições de alerta (>70 overbought, <30 oversold)
+- Loop assíncrono verificando velas (abertas e fechadas) a cada 5s
+- **Sistema Anti-Spam com Recovery Zones:**
+  - RSI: só re-alerta se voltar à zona neutra (35-65)
+  - Breakouts: só re-alerta se preço voltar ao range
+  - Previne spam de alertas repetitivos
+- Processa RSI em tempo real (alerta quando toca threshold)
+- Processa breakouts em tempo real (preço > high ou < low anterior)
 - Consulta throttler antes de enviar
 - Suporta consolidação multi-timeframe
 
 #### 6. Notifications (`src/notif/`)
 - **`templates.py`**: Mensagens em PT-BR com emojis
-  - `template_rsi_overbought()`, `template_rsi_oversold()`
-  - `template_startup()`, `template_circuit_breaker()`
+  - RSI normal: `template_rsi_overbought()`, `template_rsi_oversold()`
+  - RSI extremo: `template_rsi_extreme_overbought()`, `template_rsi_extreme_oversold()`
+  - Breakouts: `template_breakout_bull()`, `template_breakout_bear()`
+  - Sistema: `template_startup()`, `template_circuit_breaker()`
+  - Disclaimer: "DYOR" em todos os alertas
 - **`formatter.py`**: Formatação brasileira
   - `format_price_br(67420.50)` → "$67.420,50"
   - `format_datetime_br()` → "11/11/2025 16:30 BRT"
@@ -135,14 +154,25 @@ smartmoney-bot/
   2. Load config
   3. Backfill histórico
   4. Enviar startup message
-- **Runtime:**
-  - WebSocket listener (async task)
-  - Alert engine (async task)
+- **Runtime (4 async tasks):**
+  - WebSocket listener
+  - Alert engine
+  - Database cleanup scheduler
+  - Healthcheck HTTP server
   - Shutdown handler (SIGTERM/SIGINT)
 - **Graceful shutdown:**
   - Fecha WebSocket
+  - Para healthcheck server
   - Commit final ao DB
   - Envia shutdown message (opcional)
+
+#### 8. Healthcheck (`src/utils/healthcheck.py`)
+- **HTTP Server** (aiohttp) na porta 8080
+- **Endpoints:**
+  - `GET /health` → Simple 200 OK
+  - `GET /status` → Métricas (uptime, alerts_sent, ws_connected, last_alert)
+  - `GET /` → Index HTML com links
+- **Uso:** Monitoring externo (UptimeRobot, Prometheus, etc.)
 
 ---
 
@@ -162,41 +192,69 @@ smartmoney-bot/
 10. ✅ **Graceful Shutdown** - Signal handlers (SIGTERM/SIGINT)
 11. ✅ **Docker Setup** - Resource limits (256MB RAM, 0.5 CPU)
 12. ✅ **Testing Suite** - Dry-run mode completo
-
-### Testes Validados
-
-- ✅ Config loading
-- ✅ Database init
-- ✅ Backfill (800 candles)
-- ✅ Telegram connectivity
-- ✅ Dry-run completo
-- ✅ LIVE mode operacional
+13. ✅ **Real-time Alerts** - Alertas quando RSI toca threshold (não apenas no close)
+14. ✅ **Database Throttling** - 10s para velas abertas (94% redução I/O)
 
 ---
 
-## SPRINT 2 - PRÓXIMO
+## SPRINT 2 - COMPLETADO ✅
+
+### Features Implementadas
+
+1. ✅ **Breakout Detection** - Tempo real em 1d/1w
+   - Alerta quando preço atual rompe high/low da vela anterior
+   - Margem 0.1% para evitar falsos positivos
+   - Templates urgentes: "⚡ Preço está rompendo AGORA!"
+
+2. ✅ **Database Cleanup Automático**
+   - Cronjob diário às 03:00 UTC
+   - Deleta velas > 90 dias
+   - Mantém mínimo 200 velas/TF
+
+3. ✅ **Healthcheck HTTP Endpoint**
+   - Servidor aiohttp na porta 8080
+   - `/health`, `/status`, `/` (index)
+   - Métricas: uptime, alerts_sent, ws_connected
+
+4. ✅ **Sistema Anti-Spam com Recovery Zones**
+   - RSI: só re-alerta após recovery (35 < RSI < 65)
+   - Breakouts: só re-alerta se preço volta ao range
+   - Previne spam de alertas repetitivos
+
+5. ✅ **Alertas RSI em 2 Níveis**
+   - **Nível 1:** RSI > 70 / < 30 (Atenção)
+   - **Nível 2:** RSI > 85 / < 15 (EXTREMO)
+   - Templates diferenciados por nível
+
+6. ✅ **Disclaimer Simplificado**
+   - Removido "(Do Your Own Research)"
+   - Mantido apenas "DYOR"
+
+---
+
+## SPRINT 3 - PRÓXIMO
 
 ### Features Planejadas
 
-1. **Breakout Alerts** (1d, 1w apenas)
-   - Rompimento de alta (preço > máxima anterior)
-   - Rompimento de baixa (preço < mínima anterior)
-   - Margem de 0.1% para evitar falsos positivos
+1. **Support/Resistance Levels**
+   - Detecção automática de S/R em múltiplos TFs
+   - Alertas quando preço se aproxima de níveis-chave
+   - Visualização de níveis fortes vs fracos
 
-2. **Database Cleanup Cronjob**
-   - Deletar candles > 90 dias (4h, 1h)
-   - Manter 1d e 1w indefinidamente
-   - Rodar diariamente às 03:00 BRT
+2. **Padrões de Candles**
+   - Doji, Hammer, Engulfing, etc.
+   - Detecção em 1d/1w apenas
+   - Alertas de reversão potencial
 
-3. **Advanced Throttling**
-   - Per-condition throttling (ex: RSI_1h max 1x/hora)
-   - Multi-timeframe deduplication
-   - Alert priority system
+3. **Multi-Symbol Support (Premium Tier)**
+   - ETHUSDT, SOLUSDT, BNBUSDT
+   - Config separado: `configs/premium.yaml`
+   - Database isolado por tier
 
-4. **Monitoring & Health**
-   - Healthcheck endpoint (HTTP)
-   - Metrics: uptime, alerts sent, WebSocket status
-   - Auto-restart on critical failures
+4. **Advanced Analytics**
+   - Volume profile
+   - Order flow heatmap
+   - Correlation matrix BTC/alts
 
 ---
 
@@ -224,8 +282,16 @@ indicators:
     period: 14
     overbought: 70
     oversold: 30
+    extreme_overbought: 85
+    extreme_oversold: 15
     timeframes: ["1h", "4h", "1d"]
-    alert_on_close: true
+    alert_on_touch: true  # Real-time alerts
+
+  breakout:
+    enabled: true
+    timeframes: ["1d", "1w"]
+    margin_percent: 0.1
+    alert_on_touch: true
 
 alerts:
   language: "pt-BR"
@@ -237,6 +303,14 @@ alerts:
   throttling:
     enabled: true
     max_alerts_per_hour: 20
+  skip_retroactive_alerts: true
+
+database:
+  cleanup:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily 03:00 UTC
+    retention_days: 90
+    min_candles_per_tf: 200
 ```
 
 ### Variáveis de Ambiente (.env)
@@ -371,10 +445,23 @@ grep "Backfill" bot.log  # Verificar sucesso
 ### RSI Alerts
 
 - **Período:** 14 (Wilder's smoothing)
-- **Overbought:** > 70
-- **Oversold:** < 30
+- **Nível 1 (Atenção):**
+  - Overbought: > 70
+  - Oversold: < 30
+- **Nível 2 (EXTREMO):**
+  - Extreme Overbought: > 85
+  - Extreme Oversold: < 15
 - **Timeframes:** 1h, 4h, 1d (apenas)
-- **Trigger:** Somente quando vela **fecha** (`is_closed=True`)
+- **Trigger:** Quando RSI **toca** threshold (tempo real, não apenas no close)
+- **Anti-Spam:** Recovery zone 35-65 (só re-alerta após recovery)
+
+### Breakout Alerts
+
+- **Timeframes:** 1d, 1w (apenas)
+- **Detecção:** Preço atual rompe high/low da vela **anterior**
+- **Margem:** 0.1% para evitar falsos positivos
+- **Trigger:** Tempo real (não apenas no close)
+- **Anti-Spam:** Só re-alerta se preço voltar ao range
 
 ### Throttling
 
@@ -404,6 +491,7 @@ python-dotenv==1.0.1           # .env loader
 SQLAlchemy==2.0.32             # ORM
 PyYAML==6.0.1                  # Config parser
 pytz==2024.1                   # Timezone handling
+aiohttp==3.10.0                # Healthcheck HTTP server
 ```
 
 **IMPORTANTE:** pandas>=2.2.3 é obrigatório para Python 3.13 (versões antigas não compilam).
@@ -503,6 +591,6 @@ curl https://api.binance.com/api/v3/ping
 
 ---
 
-**Versão:** 1.0.0
+**Versão:** 2.0.0
 **Última atualização:** 2025-11-11
-**Status:** Sprint 1 completo, Sprint 2 planejado
+**Status:** Sprint 2 completo, Sprint 3 planejado
