@@ -17,11 +17,14 @@ ENV PYTHONUNBUFFERED=1 \
 # Working directory
 WORKDIR /app
 
-# Install system dependencies (minimal)
+# Install system dependencies (minimal + build tools for compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     tzdata \
+    build-essential \
+    python3-dev \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Set timezone to BRT
@@ -33,6 +36,14 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove build tools to keep image slim (aiohttp already compiled)
+RUN apt-get update && apt-get remove -y --purge \
+    build-essential \
+    python3-dev \
+    gcc \
+    && apt-get autoremove -y --purge \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY src/ ./src/
