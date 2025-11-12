@@ -364,7 +364,7 @@ PYTHONPATH=. python src/main.py --dry-run
 PYTHONPATH=. python src/main.py
 
 # Com logs
-PYTHONPATH=. python src/main.py 2>&1 | tee bot.log
+PYTHONPATH=. python src/main.py 2>&1 | tee logs/bot.log
 ```
 
 ### Deploy em Produção (VPS Ubuntu 24.04 LTS)
@@ -404,7 +404,7 @@ docker-compose up -d
 docker-compose logs -f smartmoney-free
 
 # Python direto
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 & echo $! > bot.pid
 kill -SIGTERM $(cat bot.pid)
 ```
 
@@ -426,10 +426,10 @@ cp data.db backup_$(date +%Y%m%d).db
 python -c "from src.indicators.rsi import get_latest_rsi; print(get_latest_rsi('BTCUSDT', '1h'))"
 
 # Ver logs de throttling
-grep "Throttled" bot.log
+grep "Throttled" logs/bot.log
 
 # Ver alertas enviados
-grep "Alert sent" bot.log
+grep "Alert sent" logs/bot.log
 ```
 
 ---
@@ -440,7 +440,7 @@ grep "Alert sent" bot.log
 
 **Diagnóstico:**
 1. Verificar RSI atual: está em zona crítica (>70 ou <30)?
-2. Verificar throttling: `grep "Throttled" bot.log`
+2. Verificar throttling: `grep "Throttled" logs/bot.log`
 3. Verificar vela fechada: logs mostram `is_closed: True`?
 
 **Solução:** Aguardar condições de mercado ou ajustar thresholds no config.
@@ -463,7 +463,7 @@ export LANG=en_US.UTF-8
 
 ### Problema: WebSocket disconnects frequentes
 
-**Diagnóstico:** `grep "WebSocket" bot.log` mostra reconexões.
+**Diagnóstico:** `grep "WebSocket" logs/bot.log` mostra reconexões.
 
 **Solução:**
 - Verificar firewall VPS
@@ -480,7 +480,7 @@ export LANG=en_US.UTF-8
 ```bash
 rm data.db
 PYTHONPATH=. python src/main.py  # Refaz backfill
-grep "Backfill" bot.log  # Verificar sucesso
+grep "Backfill" logs/bot.log  # Verificar sucesso
 ```
 
 ---

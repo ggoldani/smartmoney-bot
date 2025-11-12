@@ -74,13 +74,13 @@ PYTHONPATH=. python src/main.py
 
 ```bash
 # Com logs em arquivo
-PYTHONPATH=. python src/main.py 2>&1 | tee bot.log
+PYTHONPATH=. python src/main.py 2>&1 | tee logs/bot.log
 
 # Em background (continua após fechar terminal)
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 &
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 &
 
 # Salvar PID para facilitar parar depois
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 & echo $! > bot.pid
 ```
 
 ---
@@ -91,18 +91,18 @@ nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
 
 ```bash
 # Ver últimas 50 linhas
-tail -50 bot.log
+tail -50 logs/bot.log
 
 # Seguir logs (Ctrl+C para sair)
-tail -f bot.log
+tail -f logs/bot.log
 
 # Filtrar por nível
-grep "ERROR" bot.log
-grep "WARNING" bot.log
-grep "INFO" bot.log
+grep "ERROR" logs/bot.log
+grep "WARNING" logs/bot.log
+grep "INFO" logs/bot.log
 
 # Ver alertas disparados
-grep "Alert sent" bot.log
+grep "Alert sent" logs/bot.log
 ```
 
 ### Verificar Status do Bot
@@ -256,7 +256,7 @@ docker-compose logs -f smartmoney-free
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 & echo $! > bot.pid
 ```
 
 ### 5. Manter Bot Rodando (systemd)
@@ -319,14 +319,14 @@ curl https://api.binance.com/api/v3/ping
 nc -zv stream.binance.com 9443
 
 # Ver logs de WebSocket
-grep "WebSocket" bot.log
+grep "WebSocket" logs/bot.log
 ```
 
 ### Database está vazio
 
 ```bash
 # Verificar se backfill rodou
-grep "Backfill" bot.log
+grep "Backfill" logs/bot.log
 
 # Forçar backfill (apague o DB):
 rm data.db
@@ -337,8 +337,8 @@ PYTHONPATH=. python src/main.py  # Recria e faz backfill
 
 ```bash
 # Verificar throttling
-grep "Throttled" bot.log
-grep "Circuit breaker" bot.log
+grep "Throttled" logs/bot.log
+grep "Circuit breaker" logs/bot.log
 
 # Verificar RSI atual (script rápido):
 python -c "
@@ -407,7 +407,7 @@ docker-compose up -d --build
 # Ou reinstalar deps (se Python direto)
 source .venv/bin/activate
 pip install -r requirements.txt --upgrade
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 &
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 &
 ```
 
 ---
@@ -440,10 +440,10 @@ PYTHONPATH=. python src/main.py --dry-run
 PYTHONPATH=. python src/main.py
 
 # Rodar LIVE em background
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 & echo $! > bot.pid
 
 # Ver logs
-tail -f bot.log
+tail -f logs/bot.log
 
 # Parar bot
 kill -SIGTERM $(cat bot.pid)

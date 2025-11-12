@@ -130,13 +130,13 @@ PYTHONPATH=. python src/main.py --dry-run
 PYTHONPATH=. python src/main.py
 
 # LIVE em background
-nohup PYTHONPATH=. python src/main.py > bot.log 2>&1 & echo $! > bot.pid
+nohup PYTHONPATH=. python src/main.py > logs/bot.log 2>&1 & echo $! > bot.pid
 
 # Parar (graceful)
 kill -SIGTERM $(cat bot.pid)
 
 # Ver logs
-tail -f bot.log
+tail -f logs/bot.log
 
 # Docker
 docker-compose up -d
@@ -216,20 +216,20 @@ docker-compose down
 
 ```bash
 # Ver últimas 50 linhas
-tail -50 bot.log
+tail -50 logs/bot.log
 
 # Seguir em tempo real
-tail -f bot.log
+tail -f logs/bot.log
 
 # Filtrar por nível
-grep "ERROR" bot.log
-grep "WARNING" bot.log
+grep "ERROR" logs/bot.log
+grep "WARNING" logs/bot.log
 
 # Ver alertas enviados
-grep "Alert sent" bot.log
+grep "Alert sent" logs/bot.log
 
 # Ver throttling ativo
-grep "Throttled" bot.log
+grep "Throttled" logs/bot.log
 ```
 
 ### Database
@@ -265,13 +265,13 @@ docker stats smartmoney-free
 ### Bot não envia alertas
 
 1. RSI está em zona crítica? (>70 ou <30)
-2. Throttling ativo? `grep "Throttled" bot.log`
+2. Throttling ativo? `grep "Throttled" logs/bot.log`
 3. Vela fechou? Logs mostram `is_closed: True`?
 
 ### WebSocket desconecta
 
 1. Firewall bloqueando? `ping stream.binance.com`
-2. Logs mostram reconexões? `grep "WebSocket" bot.log`
+2. Logs mostram reconexões? `grep "WebSocket" logs/bot.log`
 3. Aumentar watchdog timeout (src/datafeeds/binance_ws.py)
 
 ### Database vazio
@@ -280,7 +280,7 @@ docker stats smartmoney-free
 # Recriar DB com backfill
 rm data.db
 PYTHONPATH=. python src/main.py
-grep "Backfill" bot.log  # Verificar sucesso
+grep "Backfill" logs/bot.log  # Verificar sucesso
 ```
 
 ### Encoding UTF-8
