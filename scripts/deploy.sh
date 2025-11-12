@@ -6,12 +6,18 @@ set -euo pipefail
 # Ubuntu 24.04 LTS
 #
 # Uso: sudo bash deploy.sh
+#
+# O script irá:
+# 1. Criar usuário 'smartmoney' com shell bash (pode fazer login)
+# 2. Instalar bot em /home/smartmoney/smartmoney-bot (não /opt)
+# 3. Configurar permissões normais (não precisa sudo para git/editar)
+# 4. Escolher deploy: Docker OU Python nativo com systemd
 ################################################################################
 
-readonly SCRIPT_VERSION="2.0.0"
+readonly SCRIPT_VERSION="2.1.0"
 readonly BOT_USER="smartmoney"
-readonly BOT_DIR="/opt/smartmoney-bot"
-readonly LOG_FILE="/var/log/smartmoney-deploy.log"
+readonly BOT_DIR="/home/$BOT_USER/smartmoney-bot"
+readonly LOG_FILE="/tmp/smartmoney-deploy.log"
 
 # Colors for output
 readonly RED='\033[0;31m'
@@ -211,31 +217,32 @@ install_python() {
 create_bot_user() {
     log_info "Criando usuário do bot..."
 
-    # Criar usuário sem login shell (segurança)
+    # Criar usuário NORMAL (com shell, pode fazer login)
     if ! id "$BOT_USER" &>/dev/null; then
-        useradd -r -s /bin/false -d "$BOT_DIR" -c "SmartMoney Bot Service" "$BOT_USER"
+        useradd -m -s /bin/bash -c "SmartMoney Bot Service" "$BOT_USER"
         log_info "Usuário $BOT_USER criado"
+        log_info "Para definir senha: passwd $BOT_USER"
     else
         log_warn "Usuário $BOT_USER já existe"
     fi
 
-    # Add to docker group
-    usermod -aG docker "$BOT_USER" || true
+    # Add to docker group (se Docker estiver instalado)
+    if command -v docker &>/dev/null; then
+        usermod -aG docker "$BOT_USER" || true
+    fi
 }
 
 create_directories() {
     log_info "Criando diretórios..."
 
-    mkdir -p "$BOT_DIR"
-    mkdir -p "$BOT_DIR/data"
-    mkdir -p "$BOT_DIR/logs"
-    mkdir -p "$BOT_DIR/configs"
-
-    # Set permissions
-    chown -R "$BOT_USER:$BOT_USER" "$BOT_DIR"
-    chmod 750 "$BOT_DIR"
+    # Criar diretórios como usuário bot (não como root)
+    sudo -u "$BOT_USER" mkdir -p "$BOT_DIR"
+    sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/data"
+    sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/logs"
+    sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/configs"
 
     log_info "Diretórios criados em $BOT_DIR"
+    log_info "Usuário $BOT_USER tem acesso total ao diretório"
 }
 
 ################################################################################
@@ -250,13 +257,22 @@ clone_repository() {
         log_warn "Repositório já existe, fazendo pull..."
         cd "$BOT_DIR"
         sudo -u "$BOT_USER" git pull
+        log_info "Repositório atualizado"
     else
-        # Clone como bot user
-        sudo -u "$BOT_USER" git clone https://github.com/seu-usuario/smartmoney-bot.git "$BOT_DIR"
+        log_warn "⚠️  Clone o repositório manualmente como usuário $BOT_USER:"
+        log_warn "   su - $BOT_USER"
+        log_warn "   git clone <seu-repo-url> ~/smartmoney-bot"
+        log_warn "   exit"
+        read -p "Pressione ENTER após clonar o repositório..."
+
+        if [[ ! -d "$BOT_DIR/.git" ]]; then
+            log_error "Repositório não encontrado em $BOT_DIR"
+            exit 1
+        fi
+        log_info "Repositório encontrado"
     fi
 
     cd "$BOT_DIR"
-    log_info "Repositório clonado/atualizado"
 }
 
 setup_environment() {
@@ -466,17 +482,21 @@ print_summary() {
     echo ""
     echo "⚠️  PRÓXIMOS PASSOS:"
     echo ""
-    echo "1. Verifique se o .env está configurado:"
-    echo "   vim $BOT_DIR/.env"
+    echo "1. Faça login como usuário $BOT_USER (opcional):"
+    echo "   su - $BOT_USER"
     echo ""
-    echo "2. Verifique se o bot está rodando:"
+    echo "2. Verifique se o .env está configurado:"
+    echo "   vim $BOT_DIR/.env"
+    echo "   (Agora você pode editar sem sudo!)"
+    echo ""
+    echo "3. Verifique se o bot está rodando:"
     if [[ "$DEPLOY_METHOD" == "docker" ]]; then
         echo "   docker compose -f $BOT_DIR/docker-compose.yml ps"
     else
         echo "   systemctl status smartmoney-bot"
     fi
     echo ""
-    echo "3. Monitore os logs:"
+    echo "4. Monitore os logs:"
     if [[ "$DEPLOY_METHOD" == "docker" ]]; then
         echo "   docker compose -f $BOT_DIR/docker-compose.yml logs -f"
     else
@@ -528,12 +548,7 @@ main() {
     # Bot setup
     create_bot_user
     create_directories
-
-    # IMPORTANTE: Clone manual (ou ajustar URL)
-    log_warn "⚠️  ATENÇÃO: Clone o repositório manualmente:"
-    log_warn "   git clone <seu-repo-url> $BOT_DIR"
-    read -p "Pressione ENTER após clonar o repositório..."
-
+    clone_repository
     setup_environment
 
     # Deploy
