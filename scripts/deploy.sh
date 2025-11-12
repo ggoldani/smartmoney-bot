@@ -8,14 +8,15 @@ set -euo pipefail
 # Uso: sudo bash deploy.sh
 #
 # O script irá:
-# 1. Criar usuário 'smartmoney' com shell bash (pode fazer login)
-# 2. Instalar bot em /home/smartmoney/smartmoney-bot (não /opt)
-# 3. Configurar permissões normais (não precisa sudo para git/editar)
+# 1. Instalar bot no diretório do USUÁRIO ATUAL (~/<user>/smartmoney-bot)
+# 2. Configurar permissões para o usuário (não precisa sudo para git/editar)
+# 3. Instalar dependências do sistema (Docker/Python/firewall) como root
 # 4. Escolher deploy: Docker OU Python nativo com systemd
 ################################################################################
 
-readonly SCRIPT_VERSION="2.1.0"
-readonly BOT_USER="smartmoney"
+readonly SCRIPT_VERSION="2.2.0"
+# Pega o usuário real (quem chamou sudo)
+readonly BOT_USER="${SUDO_USER:-$USER}"
 readonly BOT_DIR="/home/$BOT_USER/smartmoney-bot"
 readonly LOG_FILE="/tmp/smartmoney-deploy.log"
 
@@ -214,35 +215,43 @@ install_python() {
 # User & Directory Setup
 ################################################################################
 
-create_bot_user() {
-    log_info "Criando usuário do bot..."
+setup_user_permissions() {
+    log_info "Configurando permissões para usuário $BOT_USER..."
 
-    # Criar usuário NORMAL (com shell, pode fazer login)
+    # Verificar se usuário existe
     if ! id "$BOT_USER" &>/dev/null; then
-        useradd -m -s /bin/bash -c "SmartMoney Bot Service" "$BOT_USER"
-        log_info "Usuário $BOT_USER criado"
-        log_info "Para definir senha: passwd $BOT_USER"
-    else
-        log_warn "Usuário $BOT_USER já existe"
+        log_error "Usuário $BOT_USER não existe!"
+        log_error "Execute como: sudo bash deploy.sh (sem trocar de usuário)"
+        exit 1
     fi
 
     # Add to docker group (se Docker estiver instalado)
     if command -v docker &>/dev/null; then
         usermod -aG docker "$BOT_USER" || true
+        log_info "Usuário $BOT_USER adicionado ao grupo docker"
     fi
+
+    log_info "Bot será instalado em: $BOT_DIR"
+    log_info "Usuário: $BOT_USER"
 }
 
 create_directories() {
     log_info "Criando diretórios..."
 
-    # Criar diretórios como usuário bot (não como root)
-    sudo -u "$BOT_USER" mkdir -p "$BOT_DIR"
+    # Criar diretórios como usuário (não como root)
+    if [[ ! -d "$BOT_DIR" ]]; then
+        sudo -u "$BOT_USER" mkdir -p "$BOT_DIR"
+        log_info "Diretório $BOT_DIR criado"
+    else
+        log_warn "Diretório $BOT_DIR já existe"
+    fi
+
+    # Subdiretórios
     sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/data"
     sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/logs"
     sudo -u "$BOT_USER" mkdir -p "$BOT_DIR/configs"
 
-    log_info "Diretórios criados em $BOT_DIR"
-    log_info "Usuário $BOT_USER tem acesso total ao diretório"
+    log_info "Usuário $BOT_USER tem controle total do diretório"
 }
 
 ################################################################################
@@ -482,21 +491,17 @@ print_summary() {
     echo ""
     echo "⚠️  PRÓXIMOS PASSOS:"
     echo ""
-    echo "1. Faça login como usuário $BOT_USER (opcional):"
-    echo "   su - $BOT_USER"
-    echo ""
-    echo "2. Verifique se o .env está configurado:"
+    echo "1. Verifique o .env (como usuário $BOT_USER, sem sudo):"
     echo "   vim $BOT_DIR/.env"
-    echo "   (Agora você pode editar sem sudo!)"
     echo ""
-    echo "3. Verifique se o bot está rodando:"
+    echo "2. Verifique se o bot está rodando:"
     if [[ "$DEPLOY_METHOD" == "docker" ]]; then
         echo "   docker compose -f $BOT_DIR/docker-compose.yml ps"
     else
         echo "   systemctl status smartmoney-bot"
     fi
     echo ""
-    echo "4. Monitore os logs:"
+    echo "3. Monitore os logs:"
     if [[ "$DEPLOY_METHOD" == "docker" ]]; then
         echo "   docker compose -f $BOT_DIR/docker-compose.yml logs -f"
     else
@@ -546,7 +551,7 @@ main() {
     fi
 
     # Bot setup
-    create_bot_user
+    setup_user_permissions
     create_directories
     clone_repository
     setup_environment
