@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
 
     environment:
+      - PYTHONPATH=/app
       - CONFIG_FILE=./configs/free.yaml
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
