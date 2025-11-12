@@ -2,12 +2,13 @@
 
 Bot Telegram de alertas de trading para criptomoedas (BTCUSDT) com foco no mercado brasileiro. Alertas RSI (sobrecomprado/sobrevendido) em múltiplos timeframes com formatação brasileira (BRT, R$ com vírgula).
 
-**Status:** Sprint 1 completo ✅ | **Versão:** 1.0.0 | **Tier:** FREE
+**Status:** Sprint 2 completo ✅ | **Versão:** 2.1.0 | **Tier:** FREE
 
 ---
 
-## Features (Sprint 1)
+## Features
 
+### Sprint 1 ✅
 - ✅ **RSI Alerts** - Overbought (>70) / Oversold (<30) em 1h, 4h, 1d
 - ✅ **Real-time Data** - Binance WebSocket com reconnection resilience
 - ✅ **Backfill Histórico** - 200 velas por timeframe ao iniciar
@@ -17,6 +18,15 @@ Bot Telegram de alertas de trading para criptomoedas (BTCUSDT) com foco no merca
 - ✅ **Admin Channel** - Logs de erro separados
 - ✅ **Graceful Shutdown** - SIGTERM/SIGINT handler
 - ✅ **Docker Ready** - Resource limits (256MB RAM, 0.5 CPU)
+
+### Sprint 2 ✅
+- ✅ **Breakout Alerts** - Rompimento de alta/baixa em tempo real (1d, 1w)
+- ✅ **RSI 2 Níveis** - Normal (70/30) e EXTREMO (85/15)
+- ✅ **Anti-Spam System** - Recovery zones para prevenir alertas repetitivos
+- ✅ **Database Cleanup** - Cronjob automático (90 dias, mínimo 200 velas/TF)
+- ✅ **Healthcheck HTTP** - Endpoint `/health` e `/status` na porta 8080
+- ✅ **Deploy Automation** - Script completo para Ubuntu 24.04 LTS
+- ✅ **Security Hardening** - UFW + Fail2Ban + systemd sandboxing
 
 ---
 
@@ -43,8 +53,65 @@ PYTHONPATH=. python src/main.py --dry-run
 PYTHONPATH=. python src/main.py
 ```
 
-### 2. Docker (Produção)
+### 2. Deploy em Produção (VPS Ubuntu 24.04 LTS)
 
+**Deploy Automatizado** (recomendado):
+
+```bash
+# Na VPS, execute o script de deploy
+sudo bash scripts/deploy.sh
+
+# O script irá:
+# 1. Atualizar sistema (apt update/upgrade)
+# 2. Instalar segurança (UFW firewall + Fail2Ban)
+# 3. Perguntar método de deploy: Docker OU Python nativo (systemd)
+# 4. Criar usuário dedicado (smartmoney)
+# 5. Instalar Docker ou Python 3.13
+# 6. Clonar repositório em /opt/smartmoney-bot
+# 7. Configurar .env (você precisa editar com suas credenciais)
+# 8. Fazer deploy do bot
+# 9. Configurar healthcheck + log rotation
+
+# Durante o script, quando pedir para configurar .env:
+# - Abra outro terminal SSH
+# - Copie seu .env local: scp .env user@vps:/opt/smartmoney-bot/.env
+# - Ou edite manualmente: vim /opt/smartmoney-bot/.env
+```
+
+**Método Docker** (se escolheu Docker no deploy):
+```bash
+# Ver logs
+docker compose -f /opt/smartmoney-bot/docker-compose.yml logs -f
+
+# Restart
+docker compose -f /opt/smartmoney-bot/docker-compose.yml restart
+
+# Status
+docker compose -f /opt/smartmoney-bot/docker-compose.yml ps
+```
+
+**Método Python Nativo** (se escolheu systemd no deploy):
+```bash
+# Ver logs
+journalctl -u smartmoney-bot -f
+
+# Restart
+systemctl restart smartmoney-bot
+
+# Status
+systemctl status smartmoney-bot
+```
+
+**Healthcheck** (ambos os métodos):
+```bash
+# Manual
+/usr/local/bin/smartmoney-health
+
+# Métricas
+curl http://localhost:8080/status
+```
+
+**Deploy Manual** (se preferir):
 ```bash
 docker-compose up -d
 docker-compose logs -f smartmoney-free
