@@ -52,3 +52,5 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+
+CLAUDE.md

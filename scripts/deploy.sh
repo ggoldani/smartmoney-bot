@@ -3,15 +3,16 @@ set -euo pipefail
 
 ################################################################################
 # SmartMoney Bot - Production Deployment Script
-# Ubuntu 24.04 LTS
+# Debian-based Distros (Ubuntu, Debian, etc)
 #
 # Uso: sudo bash deploy.sh
 #
 # O script irá:
-# 1. Instalar bot no diretório do USUÁRIO ATUAL (~/<user>/smartmoney-bot)
-# 2. Configurar permissões para o usuário (não precisa sudo para git/editar)
-# 3. Instalar dependências do sistema (Docker/Python/firewall) como root
-# 4. Escolher deploy: Docker OU Python nativo com systemd
+# 1. Detectar distro Debian-based (Ubuntu, Debian, etc)
+# 2. Instalar bot no diretório do USUÁRIO ATUAL (~/<user>/smartmoney-bot)
+# 3. Configurar permissões para o usuário (não precisa sudo para git/editar)
+# 4. Instalar dependências do sistema (Docker/Python/firewall) como root
+# 5. Escolher deploy: Docker OU Python nativo com systemd
 ################################################################################
 
 readonly SCRIPT_VERSION="2.2.0"
@@ -53,21 +54,23 @@ check_root() {
     fi
 }
 
-check_ubuntu() {
+check_debian_based() {
     if [[ ! -f /etc/os-release ]]; then
         log_error "Sistema operacional não identificado"
         exit 1
     fi
 
     source /etc/os-release
-    if [[ "$ID" != "ubuntu" ]] || [[ "$VERSION_ID" != "24.04" ]]; then
-        log_warn "Este script foi testado apenas no Ubuntu 24.04 LTS"
-        read -p "Continuar mesmo assim? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+
+    # Verifica se é Debian-based (Ubuntu, Debian, etc)
+    if [[ "$ID_LIKE" != *"debian"* ]] && [[ "$ID" != "debian" ]] && [[ "$ID" != "ubuntu" ]]; then
+        log_error "Este script requer uma distro Debian-based (Ubuntu, Debian, etc)"
+        log_error "Distro detectada: $ID"
+        exit 1
     fi
+
+    log_info "Distro detectada: $ID (baseado em Debian)"
+    log_info "Versão: $VERSION_ID"
 }
 
 ################################################################################
@@ -136,6 +139,11 @@ configure_firewall() {
 configure_fail2ban() {
     log_info "Configurando Fail2Ban..."
 
+    # Detectar caminho correto do log (Debian-based usa /var/log/auth.log)
+    if [[ ! -f /var/log/auth.log ]]; then
+        log_warn "Log file /var/log/auth.log não encontrado, Fail2Ban pode não funcionar corretamente"
+    fi
+
     # Jail local config
     cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
@@ -147,6 +155,7 @@ maxretry = 5
 enabled = true
 port = 22
 logpath = /var/log/auth.log
+backend = systemd
 EOF
 
     systemctl enable fail2ban
@@ -165,15 +174,29 @@ install_docker() {
     # Remove versões antigas
     apt-get remove -y -qq docker docker-engine docker.io containerd runc 2>/dev/null || true
 
-    # Add Docker GPG key
+    # Add Docker GPG key (genérico para Debian-based)
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL https://download.docker.com/linux/$(source /etc/os-release && echo "$ID")/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
+
+    # Detectar distro ID para repositório correto
+    source /etc/os-release
+    DOCKER_DISTRO="$ID"
+    if [[ "$ID" == "ubuntu" ]]; then
+        DOCKER_DISTRO="ubuntu"
+        CODENAME=$(lsb_release -cs 2>/dev/null || echo "jammy")
+    elif [[ "$ID" == "debian" ]]; then
+        DOCKER_DISTRO="debian"
+        CODENAME="${VERSION_CODENAME:-bookworm}"  # Fallback if empty
+    else
+        DOCKER_DISTRO="$ID"
+        CODENAME="${VERSION_CODENAME:-jammy}"  # Fallback for other distros
+    fi
 
     # Add Docker repository
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DOCKER_DISTRO \
+      $CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     # Install Docker
     apt-get update -qq
@@ -191,24 +214,31 @@ install_docker() {
 ################################################################################
 
 install_python() {
-    log_info "Instalando Python 3.13..."
+    log_info "Instalando Python 3.11+..."
 
-    # Adicionar PPA deadsnakes (para Python 3.13)
-    add-apt-repository -y ppa:deadsnakes/ppa
-    apt-get update -qq
-
-    # Instalar Python 3.13 + deps
+    # Tentar usar python3 padrão do apt (3.11+ em distros modernas)
     apt-get install -y -qq \
-        python3.13 \
-        python3.13-venv \
-        python3.13-dev \
+        python3 \
+        python3-venv \
+        python3-dev \
         python3-pip \
         build-essential
 
-    # Verificar versão
-    python3.13 --version
+    # Verificar versão e compatibilidade
+    PYTHON_VERSION=$(python3 --version | awk '{print $2}')
+    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
 
-    log_info "Python 3.13 instalado"
+    log_info "Python instalado: $PYTHON_VERSION"
+
+    # Verificar se é 3.11+
+    if [[ $PYTHON_MAJOR -lt 3 ]] || [[ $PYTHON_MAJOR -eq 3 && $PYTHON_MINOR -lt 11 ]]; then
+        log_error "Python 3.11+ é requerido. Versão encontrada: $PYTHON_VERSION"
+        log_warn "Tente: apt-get install -y deadsnakes-ppa (se Ubuntu) e depois apt-get install python3.11"
+        exit 1
+    fi
+
+    log_info "Python 3.11+ verificado ✓"
 }
 
 ################################################################################
@@ -227,8 +257,15 @@ setup_user_permissions() {
 
     # Add to docker group (se Docker estiver instalado)
     if command -v docker &>/dev/null; then
-        usermod -aG docker "$BOT_USER" || true
-        log_info "Usuário $BOT_USER adicionado ao grupo docker"
+        if ! groups "$BOT_USER" | grep -q docker; then
+            usermod -aG docker "$BOT_USER" || true
+            log_info "Usuário $BOT_USER adicionado ao grupo docker"
+            log_warn "⚠️  IMPORTANTE: O grupo docker apenas ativa após logout/login"
+            log_warn "   Se escolher Docker no próximo passo, script executará como root"
+            log_warn "   e ajustará permissões automaticamente"
+        else
+            log_info "Usuário $BOT_USER já está no grupo docker"
+        fi
     fi
 
     log_info "Bot será instalado em: $BOT_DIR"
@@ -264,15 +301,15 @@ clone_repository() {
     # Se já existe, fazer pull
     if [[ -d "$BOT_DIR/.git" ]]; then
         log_warn "Repositório já existe, fazendo pull..."
-        cd "$BOT_DIR"
-        sudo -u "$BOT_USER" git pull
+        # Git pull em subshell com cd para manter contexto correto
+        sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && git pull"
         log_info "Repositório atualizado"
     else
         log_warn "⚠️  Clone o repositório manualmente como usuário $BOT_USER:"
         log_warn "   su - $BOT_USER"
         log_warn "   git clone <seu-repo-url> ~/smartmoney-bot"
         log_warn "   exit"
-        read -p "Pressione ENTER após clonar o repositório..."
+        read -p "Pressione ENTER após clonar o repositório..." || true
 
         if [[ ! -d "$BOT_DIR/.git" ]]; then
             log_error "Repositório não encontrado em $BOT_DIR"
@@ -281,7 +318,16 @@ clone_repository() {
         log_info "Repositório encontrado"
     fi
 
-    cd "$BOT_DIR"
+    # Validar arquivos críticos
+    local required_files=("$BOT_DIR/.env.example" "$BOT_DIR/requirements.txt" "$BOT_DIR/docker-compose.yml")
+    for file in "${required_files[@]}"; do
+        if [[ ! -f "$file" ]]; then
+            log_error "Arquivo crítico não encontrado: $file"
+            log_error "Verifique se o repositório foi clonado corretamente"
+            exit 1
+        fi
+    done
+    log_info "Todos os arquivos críticos validados ✓"
 }
 
 setup_environment() {
@@ -292,16 +338,16 @@ setup_environment() {
         log_warn "Arquivo .env não encontrado!"
         log_info "Criando .env a partir do template..."
 
-        cp "$BOT_DIR/.env.example" "$BOT_DIR/.env"
+        # Copiar e setar ownership ANTES de chmod
+        sudo -u "$BOT_USER" cp "$BOT_DIR/.env.example" "$BOT_DIR/.env"
 
         log_warn "IMPORTANTE: Edite $BOT_DIR/.env com suas credenciais:"
         log_warn "  - BOT_TOKEN (obtenha via @BotFather)"
         log_warn "  - CHANNEL_CHAT_ID (ID do canal Telegram)"
         log_warn "  - ADMIN_CHANNEL_ID (ID do canal admin)"
 
-        # Proteger .env
-        chmod 600 "$BOT_DIR/.env"
-        chown "$BOT_USER:$BOT_USER" "$BOT_DIR/.env"
+        # Proteger .env com ownership correto (user ja é owner via sudo -u)
+        sudo -u "$BOT_USER" chmod 600 "$BOT_DIR/.env"
 
         # Pause para configuração
         read -p "Pressione ENTER após configurar o .env..."
@@ -317,29 +363,44 @@ setup_environment() {
 deploy_with_docker() {
     log_info "Fazendo deploy com Docker..."
 
-    cd "$BOT_DIR"
+    # Verificar se usuário está no grupo docker
+    if ! groups "$BOT_USER" | grep -q docker; then
+        log_warn "⚠️  Usuário $BOT_USER ainda não tem permissão docker"
+        log_warn "   Faça logout/login OU execute como root para Docker"
+        log_warn "   Continuando com build como root (permissões serão ajustadas)..."
+    fi
 
-    # Build da imagem
-    docker compose build
+    # Build da imagem como usuário (se tiver permissão docker)
+    if groups "$BOT_USER" | grep -q docker; then
+        sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && docker compose build"
+    else
+        # Executar como root em subshell para manter working directory correto
+        (cd "$BOT_DIR" && docker compose build)
+        # Ajustar permissões dos arquivos criados
+        chown -R "$BOT_USER:$BOT_USER" "$BOT_DIR"
+    fi
 
-    # Start do container
-    docker compose up -d
+    # Start do container como usuário (se tiver permissão docker)
+    if groups "$BOT_USER" | grep -q docker; then
+        sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && docker compose up -d"
+    else
+        # Executar como root em subshell para manter working directory correto
+        (cd "$BOT_DIR" && docker compose up -d)
+    fi
 
     log_info "Bot iniciado via Docker"
-    log_info "Logs: docker compose logs -f"
+    log_info "Logs: docker compose -f $BOT_DIR/docker-compose.yml logs -f"
 }
 
 deploy_with_python() {
     log_info "Fazendo deploy com Python nativo..."
 
-    cd "$BOT_DIR"
+    # Criar venv como bot user em contexto correto
+    sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && python3 -m venv .venv"
 
-    # Criar venv como bot user
-    sudo -u "$BOT_USER" python3.13 -m venv .venv
-
-    # Instalar dependências
-    sudo -u "$BOT_USER" .venv/bin/pip install --upgrade pip
-    sudo -u "$BOT_USER" .venv/bin/pip install -r requirements.txt
+    # Instalar dependências em contexto correto
+    sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && .venv/bin/pip install --upgrade pip"
+    sudo -u "$BOT_USER" bash -c "cd '$BOT_DIR' && .venv/bin/pip install -r requirements.txt"
 
     log_info "Dependências instaladas"
 }
@@ -438,8 +499,22 @@ EOF
 setup_cron_monitoring() {
     log_info "Configurando monitoring via cron..."
 
-    # Adicionar cron para verificar health a cada 5 minutos
-    (crontab -u "$BOT_USER" -l 2>/dev/null; echo "*/5 * * * * /usr/local/bin/smartmoney-health || systemctl restart smartmoney-bot") | crontab -u "$BOT_USER" -
+    # Configurar sudoers para permitir restart sem senha
+    echo "$BOT_USER ALL=(ALL) NOPASSWD: /bin/systemctl restart smartmoney-bot" | tee /etc/sudoers.d/smartmoney-bot > /dev/null
+    chmod 0440 /etc/sudoers.d/smartmoney-bot
+
+    # Cron entry para healthcheck
+    local CRON_ENTRY="*/5 * * * * /usr/local/bin/smartmoney-health || sudo /bin/systemctl restart smartmoney-bot"
+
+    # Verificar se cron entry já existe para evitar duplicatas
+    if crontab -u "$BOT_USER" -l 2>/dev/null | grep -q "smartmoney-health"; then
+        log_warn "Cron entry para smartmoney-health já existe, atualizando..."
+        # Remove entry antiga e adiciona nova
+        (crontab -u "$BOT_USER" -l 2>/dev/null | grep -v "smartmoney-health"; echo "$CRON_ENTRY") | crontab -u "$BOT_USER" -
+    else
+        # Adicionar nova entrada
+        (crontab -u "$BOT_USER" -l 2>/dev/null; echo "$CRON_ENTRY") | crontab -u "$BOT_USER" -
+    fi
 
     log_info "Cron monitoring configurado"
 }
@@ -517,25 +592,36 @@ print_summary() {
 
 main() {
     log_info "SmartMoney Bot Deployment v$SCRIPT_VERSION"
-    log_info "Ubuntu 24.04 LTS"
+    log_info "Debian-based Distros (Ubuntu, Debian, etc)"
     echo ""
 
     # Pre-flight checks
     check_root
-    check_ubuntu
+    check_debian_based
 
-    # Ask deployment method
-    echo "Escolha o método de deployment:"
-    echo "1) Docker (recomendado - isolado, fácil de gerenciar)"
-    echo "2) Python nativo (systemd - melhor performance)"
-    read -p "Escolha (1/2): " -n 1 -r
-    echo ""
+    # Ask deployment method with validation
+    DEPLOY_METHOD=""
+    while [[ -z "$DEPLOY_METHOD" ]]; do
+        echo "Escolha o método de deployment:"
+        echo "1) Docker (recomendado - isolado, fácil de gerenciar)"
+        echo "2) Python nativo (systemd - melhor performance)"
+        read -p "Escolha (1/2): " -n 1 -r
+        echo ""
 
-    if [[ $REPLY == "1" ]]; then
-        DEPLOY_METHOD="docker"
-    else
-        DEPLOY_METHOD="python"
-    fi
+        case "$REPLY" in
+            1)
+                DEPLOY_METHOD="docker"
+                ;;
+            2)
+                DEPLOY_METHOD="python"
+                ;;
+            *)
+                log_error "Opção inválida: '$REPLY'. Use 1 ou 2."
+                ;;
+        esac
+    done
+
+    log_info "Método selecionado: $DEPLOY_METHOD"
 
     # System setup
     update_system
@@ -576,6 +662,7 @@ main() {
     print_summary
 
     log_info "Deploy completo! ✅"
+    log_info "Script execução bem-sucedida em distro Debian-based"
 }
 
 # Run main
