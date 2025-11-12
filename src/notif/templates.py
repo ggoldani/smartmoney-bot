@@ -40,6 +40,8 @@ def template_rsi_overbought(data: Dict) -> str:
 
     return f"""🔴 RSI Sobrecomprado ({timeframe})
 
+💰 Mercado entrando em GANANCIA no {timeframe}.
+
 {symbol}: {price}
 RSI: {rsi}
 
@@ -62,6 +64,8 @@ def template_rsi_oversold(data: Dict) -> str:
 
     return f"""🟢 RSI Sobrevendido ({timeframe})
 
+😨 Mercado entrando em MEDO no {timeframe}.
+
 {symbol}: {price}
 RSI: {rsi}
 
@@ -83,6 +87,8 @@ def template_rsi_extreme_overbought(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""🚨🔴 RSI EXTREMAMENTE SOBRECOMPRADO! ({timeframe})
+
+💸 Mercado entrando em GANANCIA EXTREMA no {timeframe}.
 
 ⚠️ CONDIÇÃO EXTREMA DETECTADA!
 {symbol}: {price}
@@ -109,6 +115,8 @@ def template_rsi_extreme_oversold(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""🚨🟢 RSI EXTREMAMENTE SOBREVENDIDO! ({timeframe})
+
+😱 Mercado entrando em MEDO EXTREMO no {timeframe}.
 
 ⚠️ CONDIÇÃO EXTREMA DETECTADA!
 {symbol}: {price}

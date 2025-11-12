@@ -64,7 +64,10 @@ docker-compose up -d
 | `DB_URL` | `sqlite:///./data.db` | ✅ | Database URL |
 | `LOG_LEVEL` | `INFO` ou `DEBUG` | ❌ | Default: INFO (DEBUG muito verbose) |
 
-**CRÍTICO:** Não commitar `.env` com secrets reais. Use `.env.example` como template.
+**CRÍTICO:**
+- Não commitar `.env` com secrets reais. Use `.env.example` como template.
+- **DB_URL é obrigatório** - Sem ele, o bot não consegue criar/abrir o banco de dados
+- Em Docker, o .env precisa estar no diretório raiz (`~/smartmoney-bot/.env`)
 
 ### Bot Config (YAML) - `configs/free.yaml`
 
@@ -278,6 +281,9 @@ configs/
 | ImportError | Dependencies faltando ou sem PYTHONPATH | `pip install -r requirements.txt`, usar `PYTHONPATH=. python ...` |
 | Bot crashes | Exceção no código | Verificar admin Telegram channel (❌ errors), `grep "ERROR" logs/bot.log` |
 | Healthcheck fail | Port 8080 não responde | `curl http://localhost:8080/health`, restart bot |
+| ModuleNotFoundError: No module named 'src' | PYTHONPATH não definido (Docker) | Adicionar `PYTHONPATH=/app` no docker-compose.yml environment |
+| unable to open database file | Filesystem read-only ou sem permissões | Remover `read_only: true` do docker-compose.yml, garantir `/data` volume com permissões 755 |
+| Bot não manda msg no Telegram | BOT_TOKEN inválido ou ausente em .env | Verificar: `cat .env \| grep BOT_TOKEN`, token deve vir exato do @BotFather, sem espaços |
 
 ---
 
