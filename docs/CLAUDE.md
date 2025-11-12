@@ -230,6 +230,13 @@ smartmoney-bot/
    - Removido "(Do Your Own Research)"
    - Mantido apenas "DYOR"
 
+7. ✅ **Infraestrutura de Deploy (Ubuntu 24.04 LTS)**
+   - Script completo de deploy: `scripts/deploy.sh`
+   - Suporte Docker ou Python nativo (systemd)
+   - Segurança: UFW + Fail2Ban
+   - Healthcheck monitoring com auto-restart
+   - Log rotation automática
+
 ---
 
 ## SPRINT 3 - PRÓXIMO
@@ -351,7 +358,36 @@ PYTHONPATH=. python src/main.py
 PYTHONPATH=. python src/main.py 2>&1 | tee bot.log
 ```
 
-### Produção (VPS)
+### Deploy em Produção (VPS Ubuntu 24.04 LTS)
+
+```bash
+# Deploy automatizado com script
+sudo bash scripts/deploy.sh
+
+# O script irá:
+# 1. Atualizar sistema (apt update/upgrade)
+# 2. Instalar segurança (UFW, Fail2Ban)
+# 3. Perguntar método: Docker OU Python nativo
+# 4. Criar usuário smartmoney
+# 5. Configurar .env (você precisa editar)
+# 6. Fazer deploy do bot
+# 7. Configurar healthcheck + log rotation
+
+# Após deploy - Docker
+docker compose -f /opt/smartmoney-bot/docker-compose.yml logs -f
+
+# Após deploy - Python nativo (systemd)
+systemctl status smartmoney-bot
+journalctl -u smartmoney-bot -f
+
+# Healthcheck manual
+/usr/local/bin/smartmoney-health
+
+# Ver métricas
+curl http://localhost:8080/status
+```
+
+### Produção Manual (sem script)
 
 ```bash
 # Docker (recomendado)
@@ -591,6 +627,6 @@ curl https://api.binance.com/api/v3/ping
 
 ---
 
-**Versão:** 2.0.0
+**Versão:** 2.1.0
 **Última atualização:** 2025-11-11
-**Status:** Sprint 2 completo, Sprint 3 planejado
+**Status:** Sprint 2 completo (incluindo deploy infrastructure), Sprint 3 planejado
