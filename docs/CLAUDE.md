@@ -60,8 +60,8 @@ Documentação completa para futuras instâncias do Claude Code trabalhar neste 
 - **NUNCA fazer git push** - apenas sugerir commits locais
 - **SEMPRE usar git add + git commit** - commitar quando solicitado
 - **Mensagens de commit objetivas** - formato: `tipo: descrição breve`
-- **Co-Authored-By: Claude** - adicionar em todos os commits
-- **User é o autor principal** - commits devem sair no nome dele (ggoldani)
+- **SEM co-autoria** - commits devem sair APENAS no nome do user (ggoldani)
+- **SEM emojis ou badges** - mensagens limpas, sem 🤖 ou "Generated with Claude Code"
 - **Perguntar antes de push** - usuário decide quando sincronizar com GitHub
 
 ---
