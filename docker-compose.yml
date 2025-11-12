@@ -1,24 +1,27 @@
 version: '3.8'
 
 services:
-  bot-free:
+  smartmoney-free:
+    container_name: smartmoney-free-bot
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: smartmoney-bot-free
+    restart: unless-stopped
+
+    environment:
+      - CONFIG_FILE=./configs/free.yaml
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
     env_file:
       - .env
+
     volumes:
-      - ./src:/app/src
+      # Data persistence
       - ./data:/app/data
       - ./logs:/app/logs
       - ./configs:/app/configs:ro
-    environment:
-      - CONFIG_FILE=/app/configs/free.yaml
-    restart: unless-stopped
-    # Run as non-root user (UID 1000)
-    user: "1000:1000"
-    # Resource limits for basic VPS
+
+    # Resource limits (VPS básico)
     deploy:
       resources:
         limits:
@@ -28,20 +31,50 @@ services:
           cpus: '0.25'
           memory: 128M
 
-  # Premium bot (Sprint 3 - commented for now)
-  # bot-premium:
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    # Network (opcional - para expor healthcheck externamente)
+    # ports:
+    #   - "8080:8080"
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Premium bot (Sprint 3+ - futuro)
+  # smartmoney-premium:
+  #   container_name: smartmoney-premium-bot
   #   build:
   #     context: .
   #     dockerfile: docker/Dockerfile
-  #   container_name: smartmoney-bot-premium
+  #   restart: unless-stopped
+  #   environment:
+  #     - CONFIG_FILE=./configs/premium.yaml
   #   env_file:
   #     - .env.premium
   #   volumes:
-  #     - ./src:/app/src
   #     - ./data-premium:/app/data
   #     - ./logs-premium:/app/logs
   #     - ./configs:/app/configs:ro
-  #   environment:
-  #     - CONFIG_FILE=/app/configs/premium.yaml
-  #   restart: unless-stopped
-  #   user: "1000:1000"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 512M
