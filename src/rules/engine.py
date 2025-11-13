@@ -159,13 +159,13 @@ class AlertEngine:
         RECOVERY_OVERSOLD_THRESHOLD = 35
         RECOVERY_OVERBOUGHT_THRESHOLD = 65
 
-        # Check if RSI is in recovery/neutral zone
+        # Check if RSI is in recovery/neutral zone → reset state but ALLOW processing
         if RECOVERY_OVERSOLD_THRESHOLD < current_rsi < RECOVERY_OVERBOUGHT_THRESHOLD:
             # RSI is neutral - reset condition tracker
             if last_condition is not None:
                 logger.debug(f"RSI recovery detected for {symbol} {interval}: RSI={current_rsi:.2f} (was {last_condition})")
                 self.last_condition[condition_tracker_key] = None
-            return  # No alert in neutral zone
+            # Don't return here - allow check of next condition below
 
         # If current condition is NORMAL, nothing to alert
         if current_condition == "NORMAL":
