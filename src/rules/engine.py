@@ -4,8 +4,17 @@ This is the core of the bot's alerting system.
 """
 import asyncio
 import time
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, TypedDict
 from loguru import logger
+
+
+class CandleData(TypedDict):
+    """Candle data structure passed to process_candle."""
+    symbol: str
+    interval: str
+    open_time: int
+    close: float
+    is_closed: bool
 
 from src.config import (
     get_symbols,
@@ -80,6 +89,11 @@ class AlertEngine:
         Returns list of candles to process.
         """
         symbols = get_symbols()
+
+        if not symbols:
+            logger.warning("No symbols configured in alert engine")
+            return []
+
         candles_to_process = []
 
         with SessionLocal() as session:
@@ -87,11 +101,15 @@ class AlertEngine:
                 symbol = sym_config["name"]
                 timeframes = sym_config["timeframes"]
 
+                if not timeframes:
+                    logger.warning(f"No timeframes configured for symbol {symbol}")
+                    continue
+
                 for interval in timeframes:
                     key = self._get_candle_key(symbol, interval)
                     last_open_time = self.last_processed.get(key, None)
 
-                    # Query for LATEST candle (open or closed), not just closed ones
+                    # Query for the LATEST candle (whether open or closed)
                     candle = session.query(Candle).filter(
                         Candle.symbol == symbol,
                         Candle.interval == interval
@@ -150,6 +168,66 @@ class AlertEngine:
         """Return template function for breakout type"""
         return template_breakout_bull if breakout_type == "BULL" else template_breakout_bear
 
+    def _is_repeated_condition(self, tracker_key: str, current_condition: str) -> bool:
+        """Check if condition hasn't changed since last alert (anti-spam)."""
+        last_condition = self.last_condition.get(tracker_key)
+        if last_condition is not None and last_condition == current_condition:
+            return True
+        return False
+
+    def _check_throttle_and_mark(self, condition_key: str, alert_key: str) -> bool:
+        """
+        Check if alert is throttled and mark as alerted if so.
+        Returns True if can send, False if throttled.
+        """
+        can_send, reason = self.throttler.can_send_alert(condition_key)
+        if not can_send:
+            logger.info(f"Alert throttled: {condition_key}")
+            # Mark as alerted to prevent retry on next cycle
+            self.alerted_candles[alert_key] = True
+            self.alerted_candles_with_timestamp[alert_key] = time.time()
+            return False
+        return True
+
+    def _collect_single_alert(self, alert_type: str, condition: str, symbol: str,
+                             interval: str, open_time: int, result: Dict,
+                             tracker_key: str, condition_key: str,
+                             template_func) -> None:
+        """
+        Collect single alert to pending queue.
+        Alert dict includes type-specific fields from result.
+        """
+        alert_key = f"{symbol}_{interval}_{open_time}_{condition}"
+
+        # Mark as alerted IMMEDIATELY to prevent reprocessing
+        self.alerted_candles[alert_key] = True
+        self.alerted_candles_with_timestamp[alert_key] = time.time()
+
+        # Build alert dict with common fields
+        alert_dict = {
+            'type': alert_type,
+            'condition': condition,
+            'symbol': symbol,
+            'interval': interval,
+            'open_time': open_time,
+            'alert_key': alert_key,
+            'condition_key': condition_key,
+            'tracker_key': tracker_key,
+            'template_func': template_func,
+        }
+
+        # Add type-specific fields from result
+        if alert_type == 'RSI':
+            alert_dict['rsi'] = result.get('rsi')
+            alert_dict['price'] = result.get('price')
+        elif alert_type == 'BREAKOUT':
+            alert_dict['price'] = result.get('price')
+            alert_dict['prev_high'] = result.get('prev_high')
+            alert_dict['prev_low'] = result.get('prev_low')
+            alert_dict['change_pct'] = result.get('change_pct')
+
+        self.pending_alerts.append(alert_dict)
+
     def _collect_rsi_alert(self, symbol: str, interval: str, open_time: int):
         """
         Check RSI and collect alert if valid (doesn't send, just validates).
@@ -170,16 +248,23 @@ class AlertEngine:
         if not result:
             return
 
+        # Validate required keys in result
+        required_keys = {'rsi', 'condition', 'price'}
+        if not all(k in result for k in required_keys):
+            logger.warning(f"RSI result missing required keys. Expected {required_keys}, got {set(result.keys())}")
+            return
+
         condition_tracker_key = f"{symbol}_{interval}_RSI"
         current_condition = result["condition"]
         current_rsi = result["rsi"]
         last_condition = self.last_condition.get(condition_tracker_key)
 
-        # RECOVERY ZONES
-        RECOVERY_OVERSOLD_THRESHOLD = 35
-        RECOVERY_OVERBOUGHT_THRESHOLD = 65
+        # Load recovery zone from config (prevents spam on reversals)
+        recovery_config = self.rsi_config.get('recovery_zone', {})
+        recovery_lower = recovery_config.get('lower', 35)  # Safe default
+        recovery_upper = recovery_config.get('upper', 65)  # Safe default
 
-        if RECOVERY_OVERSOLD_THRESHOLD < current_rsi < RECOVERY_OVERBOUGHT_THRESHOLD:
+        if recovery_lower < current_rsi < recovery_upper:
             if last_condition is not None:
                 logger.debug(f"RSI recovery: {symbol} {interval} RSI={current_rsi:.2f}")
                 self.last_condition[condition_tracker_key] = None
@@ -189,7 +274,7 @@ class AlertEngine:
             return
 
         # ANTI-SPAM: Same condition persists = skip
-        if last_condition is not None and last_condition == current_condition:
+        if self._is_repeated_condition(condition_tracker_key, current_condition):
             logger.debug(f"Anti-spam: {symbol} {interval} still {current_condition}")
             return
 
@@ -198,35 +283,23 @@ class AlertEngine:
         if alert_key in self.alerted_candles:
             return
 
-        # Check throttle
+        # Check throttle (and mark as alerted if throttled)
         condition_key = f"RSI_{current_condition}_{interval}"
-        can_send, reason = self.throttler.can_send_alert(condition_key)
-        if not can_send:
-            logger.info(f"Alert throttled: {condition_key}")
-            # Mark as alerted to prevent retry on next cycle
-            self.alerted_candles[alert_key] = True
-            self.alerted_candles_with_timestamp[alert_key] = time.time()
+        if not self._check_throttle_and_mark(condition_key, alert_key):
             return
 
-        # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
-        # (before waiting 6s for consolidation)
-        self.alerted_candles[alert_key] = True
-        self.alerted_candles_with_timestamp[alert_key] = time.time()
-
-        # Collect alert (don't send yet)
-        self.pending_alerts.append({
-            'type': 'RSI',
-            'condition': current_condition,
-            'symbol': symbol,
-            'interval': interval,
-            'rsi': result['rsi'],
-            'price': result['price'],
-            'open_time': open_time,
-            'alert_key': alert_key,
-            'condition_key': condition_key,
-            'tracker_key': condition_tracker_key,
-            'template_func': self._get_rsi_template(current_condition)
-        })
+        # Collect alert using helper (marks as alerted and adds to pending queue)
+        self._collect_single_alert(
+            alert_type='RSI',
+            condition=current_condition,
+            symbol=symbol,
+            interval=interval,
+            open_time=open_time,
+            result=result,
+            tracker_key=condition_tracker_key,
+            condition_key=condition_key,
+            template_func=self._get_rsi_template(current_condition)
+        )
 
     def _collect_breakout_alert(self, symbol: str, interval: str,
                                current_price: float, open_time: int):
@@ -243,15 +316,23 @@ class AlertEngine:
         margin_pct = self.breakout_config.get('margin_percent', 0.1)
         result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
 
-        condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
-        last_breakout = self.last_condition.get(condition_tracker_key)
-
         if not result:
             # Price back in range = recovery
+            condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
+            last_breakout = self.last_condition.get(condition_tracker_key)
             if last_breakout is not None:
                 logger.debug(f"Breakout recovery: {symbol} {interval}")
                 self.last_condition[condition_tracker_key] = None
             return
+
+        # Validate required keys in result
+        required_keys = {'type', 'price', 'prev_high', 'prev_low', 'change_pct'}
+        if not all(k in result for k in required_keys):
+            logger.warning(f"Breakout result missing required keys. Expected {required_keys}, got {set(result.keys())}")
+            return
+
+        condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
+        last_breakout = self.last_condition.get(condition_tracker_key)
 
         current_breakout_type = result['type']
 
@@ -265,33 +346,23 @@ class AlertEngine:
         if alert_key in self.alerted_candles:
             return
 
-        # Check throttle
+        # Check throttle (and mark as alerted if throttled)
         condition_key = f"BREAKOUT_{current_breakout_type}_{interval}"
-        can_send, reason = self.throttler.can_send_alert(condition_key)
-        if not can_send:
-            logger.info(f"Alert throttled: {condition_key}")
-            # Mark as alerted to prevent retry on next cycle
-            self.alerted_candles[alert_key] = True
-            self.alerted_candles_with_timestamp[alert_key] = time.time()
+        if not self._check_throttle_and_mark(condition_key, alert_key):
             return
 
-        # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
-        self.alerted_candles[alert_key] = True
-        self.alerted_candles_with_timestamp[alert_key] = time.time()
-
-        # Collect alert (don't send yet)
-        self.pending_alerts.append({
-            'type': 'BREAKOUT',
-            'condition': current_breakout_type,
-            'symbol': symbol,
-            'interval': interval,
-            'price': result['price'],
-            'open_time': open_time,
-            'alert_key': alert_key,
-            'condition_key': condition_key,
-            'tracker_key': condition_tracker_key,
-            'template_func': self._get_breakout_template(current_breakout_type)
-        })
+        # Collect alert using helper (marks as alerted and adds to pending queue)
+        self._collect_single_alert(
+            alert_type='BREAKOUT',
+            condition=current_breakout_type,
+            symbol=symbol,
+            interval=interval,
+            open_time=open_time,
+            result=result,
+            tracker_key=condition_tracker_key,
+            condition_key=condition_key,
+            template_func=self._get_breakout_template(current_breakout_type)
+        )
 
     async def check_multi_tf_consolidation(self, symbol: str):
         """
@@ -335,7 +406,7 @@ class AlertEngine:
             self.throttler.record_alert(condition_key)
             logger.info(f"Multi-TF alert sent: {symbol}")
 
-    async def process_candle(self, candle_data: Dict):
+    async def process_candle(self, candle_data: CandleData):
         """
         Process a candle: collect alerts (don't send yet).
         """
@@ -428,25 +499,25 @@ class AlertEngine:
         alerts_to_send = self.pending_alerts[:]
         self.pending_alerts = []
 
-        # Send
+        # Update state FIRST (before sending) to prevent duplicates on network failures
+        for alert in alerts_to_send:
+            self.throttler.record_alert(alert['condition_key'])
+            self.last_condition[alert['tracker_key']] = alert['condition']
+
+        # Send (failures won't revert state, preventing duplicate alerts on outages)
         if len(alerts_to_send) == 1:
-            success = self._send_single_alert(alerts_to_send[0])
-            if success:
-                # Update state after successful send
-                alert = alerts_to_send[0]
-                self.throttler.record_alert(alert['condition_key'])
-                self.last_condition[alert['tracker_key']] = alert['condition']
+            self._send_single_alert(alerts_to_send[0])
         else:
-            success = self._send_mega_alert(alerts_to_send)
-            if success:
-                # Update state after successful send
-                for alert in alerts_to_send:
-                    self.throttler.record_alert(alert['condition_key'])
-                    self.last_condition[alert['tracker_key']] = alert['condition']
+            self._send_mega_alert(alerts_to_send)
 
     def _send_single_alert(self, alert: Dict) -> bool:
         """Send single alert. Returns True if successful."""
-        template = alert['template_func'](alert)
+        try:
+            template = alert['template_func'](alert)
+        except Exception as e:
+            logger.error(f"Template generation failed for {alert['type']} {alert.get('condition')}: {e}")
+            return False
+
         success = send_message(template)
 
         if success:
