@@ -119,7 +119,65 @@ def is_indicator_enabled(indicator_name: str) -> bool:
 
 
 def get_rsi_config() -> Dict[str, Any]:
-    return get_config().get('indicators.rsi', {})
+    """Get RSI config with validation and safe defaults."""
+    rsi_config = get_config().get('indicators.rsi', {})
+
+    # Validate and apply safe defaults
+    if not isinstance(rsi_config, dict):
+        rsi_config = {}
+
+    # Ensure all critical fields exist with safe defaults
+    rsi_config.setdefault('period', 14)
+    rsi_config.setdefault('overbought', 70)
+    rsi_config.setdefault('oversold', 30)
+    rsi_config.setdefault('extreme_overbought', 85)
+    rsi_config.setdefault('extreme_oversold', 15)
+    rsi_config.setdefault('timeframes', [])
+    rsi_config.setdefault('alert_on_touch', True)
+
+    # Validate thresholds (safety checks)
+    try:
+        period = int(rsi_config.get('period', 14))
+        if period < 2 or period > 100:
+            rsi_config['period'] = 14
+        else:
+            rsi_config['period'] = period
+    except (ValueError, TypeError):
+        rsi_config['period'] = 14
+
+    try:
+        overbought = float(rsi_config.get('overbought', 70))
+        if overbought <= 50 or overbought >= 100:
+            overbought = 70
+        rsi_config['overbought'] = overbought
+    except (ValueError, TypeError):
+        rsi_config['overbought'] = 70
+
+    try:
+        oversold = float(rsi_config.get('oversold', 30))
+        if oversold <= 0 or oversold >= 50:
+            oversold = 30
+        rsi_config['oversold'] = oversold
+    except (ValueError, TypeError):
+        rsi_config['oversold'] = 30
+
+    try:
+        extreme_overbought = float(rsi_config.get('extreme_overbought', 85))
+        if extreme_overbought <= rsi_config['overbought'] or extreme_overbought >= 100:
+            extreme_overbought = 85
+        rsi_config['extreme_overbought'] = extreme_overbought
+    except (ValueError, TypeError):
+        rsi_config['extreme_overbought'] = 85
+
+    try:
+        extreme_oversold = float(rsi_config.get('extreme_oversold', 15))
+        if extreme_oversold >= rsi_config['oversold'] or extreme_oversold <= 0:
+            extreme_oversold = 15
+        rsi_config['extreme_oversold'] = extreme_oversold
+    except (ValueError, TypeError):
+        rsi_config['extreme_oversold'] = 15
+
+    return rsi_config
 
 
 def get_breakout_config() -> Dict[str, Any]:

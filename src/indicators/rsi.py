@@ -106,7 +106,8 @@ def analyze_rsi(
     oversold: float = 30,
     period: int = 14,
     extreme_overbought: float = 85,
-    extreme_oversold: float = 15
+    extreme_oversold: float = 15,
+    _use_config: bool = True
 ) -> Optional[Dict]:
     """
     Analyze RSI for given symbol/interval and check if overbought/oversold.
@@ -120,6 +121,7 @@ def analyze_rsi(
         period: RSI period (default 14)
         extreme_overbought: RSI threshold for EXTREME overbought (default 85)
         extreme_oversold: RSI threshold for EXTREME oversold (default 15)
+        _use_config: Internal flag to load values from config.yaml (default True)
 
     Returns:
         Dict with analysis result or None if insufficient data
@@ -134,6 +136,20 @@ def analyze_rsi(
             "price": 67420.50
         }
     """
+    # Load from config if available (for production use)
+    if _use_config:
+        try:
+            from src.config import get_rsi_config
+            config = get_rsi_config()
+            period = config.get('period', period)
+            overbought = config.get('overbought', overbought)
+            oversold = config.get('oversold', oversold)
+            extreme_overbought = config.get('extreme_overbought', extreme_overbought)
+            extreme_oversold = config.get('extreme_oversold', extreme_oversold)
+        except ImportError:
+            # Fallback if config can't be loaded (shouldn't happen in production)
+            logger.debug("Could not load RSI config, using function parameters")
+
     # Fetch recent candles
     closes = fetch_recent_candles_for_rsi(symbol, interval, period)
 
