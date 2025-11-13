@@ -45,6 +45,7 @@ docker-compose up -d
 | **2** ✅ | DB Cleanup | APScheduler cronjob (daily 3AM UTC, 90-day retention, min 200 candles/TF) |
 | **2** ✅ | Healthcheck | HTTP endpoints `/health` e `/status` porta 8080 |
 | **2** ✅ | Deploy Auto | Script completo (`scripts/deploy.sh`) com UFW + Fail2Ban + systemd sandbox |
+| **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
 | **3** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
 | **3** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
 | **3** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
@@ -237,10 +238,17 @@ configs/
 - **Bear:** Price < previous_low - 0.1% (📉)
 - **TFs:** 1d, 1w
 
-### Throttling & Circuit Breaker
+### Consolidação de Alertas
+- **Janela:** 6 segundos (cobre 2 ciclos de check de 5s)
+- **Regra:** 2+ alertas simultâneos → 1 mega-alerta consolidado com sirenes (🚨🚨🚨)
+- **Exemplo:** RSI <30 (1h) + Rompimento 1d = 1 mensagem consolidada
+- **Benefício:** Reduz spam, agrupa informações, mais impactante
+
+### Throttling & Anti-spam
 - **Global limit:** 20 alertas/hora (configurável)
-- **Circuit breaker:** >5 alerts/min → consolida em 1 mega-alert (🚨)
-- **Anti-spam:** Recovery zones previnem duplicatas da mesma condição
+- **Recovery zones:** RSI neutral (35-65) reseta permissão de novo alerta
+- **Per-candle:** Evita alerta duplicado na mesma candle
+- **Reforço:** Candles diferentes (1h apart) podem alertar novamente se condição persiste
 
 ### Formatação
 - **Timezone:** America/Sao_Paulo (BRT, UTC-3)
