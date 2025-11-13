@@ -5,7 +5,6 @@ This is the core of the bot's alerting system.
 import asyncio
 import time
 from typing import List, Dict, Set, Optional
-from datetime import datetime
 from loguru import logger
 
 from src.config import (
@@ -61,7 +60,9 @@ class AlertEngine:
         # Consolidation: collect alerts in 6s window, send batched
         self.pending_alerts: List[Dict] = []
         self.consolidation_interval = 6.0  # seconds
-        self.last_consolidation_time = time.time()
+
+        # Track timestamp of alerted candles for TTL cleanup (prevent unbounded growth)
+        self.alerted_candles_with_timestamp: Dict[str, float] = {}  # key: alert_key, value: timestamp
 
         # Load config
         self.rsi_config = get_rsi_config()
@@ -204,11 +205,13 @@ class AlertEngine:
             logger.info(f"Alert throttled: {condition_key}")
             # Mark as alerted to prevent retry on next cycle
             self.alerted_candles[alert_key] = True
+            self.alerted_candles_with_timestamp[alert_key] = time.time()
             return
 
         # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
         # (before waiting 6s for consolidation)
         self.alerted_candles[alert_key] = True
+        self.alerted_candles_with_timestamp[alert_key] = time.time()
 
         # Collect alert (don't send yet)
         self.pending_alerts.append({
@@ -269,10 +272,12 @@ class AlertEngine:
             logger.info(f"Alert throttled: {condition_key}")
             # Mark as alerted to prevent retry on next cycle
             self.alerted_candles[alert_key] = True
+            self.alerted_candles_with_timestamp[alert_key] = time.time()
             return
 
         # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
         self.alerted_candles[alert_key] = True
+        self.alerted_candles_with_timestamp[alert_key] = time.time()
 
         # Collect alert (don't send yet)
         self.pending_alerts.append({
@@ -348,10 +353,64 @@ class AlertEngine:
         self._collect_breakout_alert(symbol, interval, current_price, open_time)
 
     async def _consolidation_timer(self):
-        """Timer: send consolidated alerts every 6 seconds"""
+        """Timer: send consolidated alerts every 6 seconds and cleanup old alert entries"""
+        cleanup_counter = 0
         while self.running:
             await asyncio.sleep(self.consolidation_interval)
             self._send_consolidated_alerts()
+
+            # Cleanup old alert entries every 10 cycles (60 seconds)
+            cleanup_counter += 1
+            if cleanup_counter >= 10:
+                self._cleanup_old_alert_entries()
+                self._cleanup_stale_conditions()
+                cleanup_counter = 0
+
+    def _cleanup_old_alert_entries(self):
+        """Remove alert entries older than 1 hour to prevent unbounded dict growth"""
+        current_time = time.time()
+        ttl_seconds = 3600  # 1 hour
+
+        keys_to_remove = []
+        for alert_key, timestamp in self.alerted_candles_with_timestamp.items():
+            if current_time - timestamp > ttl_seconds:
+                keys_to_remove.append(alert_key)
+
+        # Remove from both dicts
+        removed_count = 0
+        for key in keys_to_remove:
+            self.alerted_candles.pop(key, None)
+            self.alerted_candles_with_timestamp.pop(key, None)
+            removed_count += 1
+
+        if removed_count > 0:
+            logger.debug(f"Cleaned up {removed_count} old alert entries (TTL 1h)")
+
+    def _cleanup_stale_conditions(self):
+        """Remove condition tracking for symbols/timeframes no longer in config"""
+        current_symbols = {s['name'] for s in get_symbols()}
+        all_timeframes = set()
+        for sym in get_symbols():
+            all_timeframes.update(sym['timeframes'])
+
+        keys_to_remove = []
+        for key in list(self.last_condition.keys()):
+            # key format: "SYMBOL_TF_RSI" or "SYMBOL_TF_BREAKOUT"
+            parts = key.rsplit('_', 1)  # Split from right to get symbol_tf and type
+            if len(parts) == 2:
+                symbol_tf, condition_type = parts
+                symbol_parts = symbol_tf.rsplit('_', 1)  # Extract symbol and tf
+                if len(symbol_parts) == 2:
+                    symbol, tf = symbol_parts
+                    # If symbol not in config, mark for removal
+                    if symbol not in current_symbols or tf not in all_timeframes:
+                        keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self.last_condition[key]
+
+        if keys_to_remove:
+            logger.debug(f"Cleaned up {len(keys_to_remove)} stale condition entries")
 
     def _send_consolidated_alerts(self):
         """Send pending alerts: single or mega-alert"""
@@ -428,10 +487,12 @@ class AlertEngine:
                             await self.process_candle(candle)
                             checked_multi_tf.add(candle["symbol"])
 
-                        # Multi-TF check
-                        for symbol in checked_multi_tf:
-                            await self.check_multi_tf_consolidation(symbol)
+                        # Multi-TF check (copy set to avoid race condition)
+                        symbols_to_check = checked_multi_tf.copy()
                         checked_multi_tf.clear()
+
+                        for symbol in symbols_to_check:
+                            await self.check_multi_tf_consolidation(symbol)
 
                     await asyncio.sleep(self.check_interval)
 
