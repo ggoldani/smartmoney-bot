@@ -246,9 +246,10 @@ configs/
 
 ### Throttling & Anti-spam
 - **Global limit:** 20 alertas/hora (configurável)
-- **Recovery zones:** RSI neutral (35-65) reseta permissão de novo alerta
+- **Recovery zones:** RSI neutral (35-65, configurável) reseta permissão de novo alerta
 - **Per-candle:** Evita alerta duplicado na mesma candle
 - **Reforço:** Candles diferentes (1h apart) podem alertar novamente se condição persiste
+- **Cleanup automático:** Limpa entries de alertas com TTL 1h (a cada 60s)
 
 ### Formatação
 - **Timezone:** America/Sao_Paulo (BRT, UTC-3)
