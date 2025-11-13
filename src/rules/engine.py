@@ -202,6 +202,8 @@ class AlertEngine:
         can_send, reason = self.throttler.can_send_alert(condition_key)
         if not can_send:
             logger.info(f"Alert throttled: {condition_key}")
+            # Mark as alerted to prevent retry on next cycle
+            self.alerted_candles[alert_key] = True
             return
 
         # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
@@ -265,6 +267,8 @@ class AlertEngine:
         can_send, reason = self.throttler.can_send_alert(condition_key)
         if not can_send:
             logger.info(f"Alert throttled: {condition_key}")
+            # Mark as alerted to prevent retry on next cycle
+            self.alerted_candles[alert_key] = True
             return
 
         # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
@@ -372,7 +376,6 @@ class AlertEngine:
                 # Update state after successful send
                 alert = alerts_to_send[0]
                 self.throttler.record_alert(alert['condition_key'])
-                self.alerted_candles[alert['alert_key']] = True
                 self.last_condition[alert['tracker_key']] = alert['condition']
         else:
             success = self._send_mega_alert(alerts_to_send)
@@ -380,7 +383,6 @@ class AlertEngine:
                 # Update state after successful send
                 for alert in alerts_to_send:
                     self.throttler.record_alert(alert['condition_key'])
-                    self.alerted_candles[alert['alert_key']] = True
                     self.last_condition[alert['tracker_key']] = alert['condition']
 
     def _send_single_alert(self, alert: Dict) -> bool:
