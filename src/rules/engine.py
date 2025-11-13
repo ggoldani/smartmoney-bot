@@ -204,6 +204,10 @@ class AlertEngine:
             logger.info(f"Alert throttled: {condition_key}")
             return
 
+        # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
+        # (before waiting 6s for consolidation)
+        self.alerted_candles[alert_key] = True
+
         # Collect alert (don't send yet)
         self.pending_alerts.append({
             'type': 'RSI',
@@ -262,6 +266,9 @@ class AlertEngine:
         if not can_send:
             logger.info(f"Alert throttled: {condition_key}")
             return
+
+        # Mark as alerted IMMEDIATELY to prevent reprocessing same candle
+        self.alerted_candles[alert_key] = True
 
         # Collect alert (don't send yet)
         self.pending_alerts.append({
@@ -354,37 +361,51 @@ class AlertEngine:
             self.pending_alerts = []
             return
 
-        # Send
-        if len(self.pending_alerts) == 1:
-            self._send_single_alert(self.pending_alerts[0])
-        else:
-            self._send_mega_alert(self.pending_alerts)
-
+        # Save alerts before sending (in case send fails)
+        alerts_to_send = self.pending_alerts[:]
         self.pending_alerts = []
 
-    def _send_single_alert(self, alert: Dict):
-        """Send single alert"""
+        # Send
+        if len(alerts_to_send) == 1:
+            success = self._send_single_alert(alerts_to_send[0])
+            if success:
+                # Update state after successful send
+                alert = alerts_to_send[0]
+                self.throttler.record_alert(alert['condition_key'])
+                self.alerted_candles[alert['alert_key']] = True
+                self.last_condition[alert['tracker_key']] = alert['condition']
+        else:
+            success = self._send_mega_alert(alerts_to_send)
+            if success:
+                # Update state after successful send
+                for alert in alerts_to_send:
+                    self.throttler.record_alert(alert['condition_key'])
+                    self.alerted_candles[alert['alert_key']] = True
+                    self.last_condition[alert['tracker_key']] = alert['condition']
+
+    def _send_single_alert(self, alert: Dict) -> bool:
+        """Send single alert. Returns True if successful."""
         template = alert['template_func'](alert)
         success = send_message(template)
 
         if success:
-            self.throttler.record_alert(alert['condition_key'])
-            self.alerted_candles[alert['alert_key']] = True
-            self.last_condition[alert['tracker_key']] = alert['condition']
             logger.info(f"Alert sent: {alert['type']} {alert['condition']}")
+        else:
+            logger.error(f"Failed to send alert: {alert['type']} {alert['condition']}")
 
-    def _send_mega_alert(self, alerts: List[Dict]):
-        """Send consolidated mega-alert"""
+        return success
+
+    def _send_mega_alert(self, alerts: List[Dict]) -> bool:
+        """Send consolidated mega-alert. Returns True if successful."""
         message = template_mega_alert(alerts)
         success = send_message(message)
 
         if success:
-            for alert in alerts:
-                self.throttler.record_alert(alert['condition_key'])
-                self.alerted_candles[alert['alert_key']] = True
-                self.last_condition[alert['tracker_key']] = alert['condition']
-
             logger.info(f"Mega-alert sent: {len(alerts)} alerts consolidated")
+        else:
+            logger.error(f"Failed to send mega-alert with {len(alerts)} alerts")
+
+        return success
 
     async def run(self):
         """Main loop: check candles + consolidation timer"""
