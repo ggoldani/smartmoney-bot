@@ -254,6 +254,56 @@ Condições:
 ⏰ {timestamp}"""
 
 
+def template_mega_alert(alerts: List[Dict]) -> str:
+    """
+    Template for consolidated mega-alert (2+ alerts in same window).
+
+    Args:
+        alerts: List of alert dicts with type, condition, symbol, interval, rsi/price, etc
+    """
+    timestamp = format_datetime_br()
+    alert_lines = []
+
+    for alert in alerts:
+        if alert['type'] == 'RSI':
+            symbol = format_symbol_display(alert['symbol'])
+            tf = format_timeframe_display(alert['interval'])
+            rsi = format_rsi_value(alert['rsi'])
+            price = format_price_br(alert['price'])
+
+            if alert['condition'] in ['EXTREME_OVERBOUGHT', 'EXTREME_OVERSOLD']:
+                emoji = '🔴🔴' if 'OVERBOUGHT' in alert['condition'] else '🟢🟢'
+                label = 'RSI EXTREMO SOBRECOMPRADO' if 'OVERBOUGHT' in alert['condition'] else 'RSI EXTREMO SOBREVENDIDO'
+            else:
+                emoji = '🔴' if 'OVERBOUGHT' in alert['condition'] else '🟢'
+                label = 'RSI SOBRECOMPRADO' if 'OVERBOUGHT' in alert['condition'] else 'RSI SOBREVENDIDO'
+
+            alert_lines.append(f"{emoji} {label} ({tf})\n   {symbol}: {price} | RSI: {rsi}")
+
+        elif alert['type'] == 'BREAKOUT':
+            symbol = format_symbol_display(alert['symbol'])
+            tf = format_timeframe_display(alert['interval'])
+            price = format_price_br(alert['price'])
+
+            emoji = '🚀' if alert['condition'] == 'BULL' else '📉'
+            label = 'ROMPIMENTO DE ALTA' if alert['condition'] == 'BULL' else 'ROMPIMENTO DE BAIXA'
+
+            alert_lines.append(f"{emoji} {label} ({tf})\n   {symbol}: {price}")
+
+    alerts_text = "\n\n".join(alert_lines)
+
+    return f"""🚨🚨🚨 ALERTA CONSOLIDADO 🚨🚨🚨
+
+⚠️ Múltiplas condições críticas detectadas!
+
+{alerts_text}
+
+📊 Analise com cuidado antes de operar.
+
+⏰ {timestamp}
+{ALERT_DISCLAIMER}"""
+
+
 def template_startup(timeframes: List[str], symbols: List[str]) -> str:
     """
     Template for bot startup message.
