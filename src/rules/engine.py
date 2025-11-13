@@ -82,7 +82,7 @@ class AlertEngine:
 
                 for interval in timeframes:
                     key = self._get_candle_key(symbol, interval)
-                    last_open_time = self.last_processed.get(key, 0)
+                    last_open_time = self.last_processed.get(key, None)
 
                     # Query for LATEST candle (open or closed), not just closed ones
                     candle = session.query(Candle).filter(
@@ -90,7 +90,17 @@ class AlertEngine:
                         Candle.interval == interval
                     ).order_by(Candle.open_time.desc()).first()
 
-                    if candle and candle.open_time >= last_open_time:
+                    if not candle:
+                        continue
+
+                    # Initialize on first run: skip all existing candles, start from next one
+                    if last_open_time is None:
+                        self.last_processed[key] = candle.open_time
+                        logger.debug(f"Alert engine initialized for {symbol} {interval}: starting from next candle after {candle.open_time}")
+                        continue
+
+                    # Only process if candle is newer than last processed
+                    if candle.open_time > last_open_time:
                         candles_to_process.append({
                             "symbol": candle.symbol,
                             "interval": candle.interval,
@@ -99,11 +109,9 @@ class AlertEngine:
                             "is_closed": candle.is_closed
                         })
 
-                        # Update last processed only if it's a different candle
-                        if candle.open_time > last_open_time:
-                            self.last_processed[key] = candle.open_time
-                            # Clear alert history for this symbol/interval (new candle started)
-                            self._clear_candle_alerts(symbol, interval, last_open_time)
+                        self.last_processed[key] = candle.open_time
+                        # Clear alert history for this symbol/interval (new candle started)
+                        self._clear_candle_alerts(symbol, interval, last_open_time)
 
         if candles_to_process:
             logger.debug(f"Processing {len(candles_to_process)} candles (open or closed)")
