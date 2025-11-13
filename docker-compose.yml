@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   smartmoney-free:
     container_name: smartmoney-free-bot
