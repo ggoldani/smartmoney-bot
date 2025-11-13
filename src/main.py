@@ -9,8 +9,6 @@ from src.config import (
     get_config,
     get_symbols,
     get_backfill_config,
-    should_send_startup_message,
-    should_send_shutdown_message,
     get_bot_name,
     get_bot_version
 )
@@ -23,7 +21,6 @@ from src.storage.init_db import init_db
 from src.storage.cleanup import schedule_cleanup_task
 from src.rules.engine import get_alert_engine
 from src.utils.healthcheck import get_healthcheck
-from src.notif.templates import template_startup, template_shutdown
 
 
 # Global shutdown event
@@ -74,21 +71,6 @@ async def startup_sequence():
             #     msg = template_backfill_complete(symbol_results)
             #     send_message(msg, to_admin=True)
 
-        # Send startup message to group
-        if should_send_startup_message():
-            symbols_cfg = get_symbols()
-
-            # Extract all unique timeframes
-            all_timeframes = set()
-            all_symbols = []
-            for sym in symbols_cfg:
-                all_symbols.append(sym["name"])
-                all_timeframes.update(sym["timeframes"])
-
-            message = template_startup(sorted(list(all_timeframes)), all_symbols)
-            send_message(message)
-            logger.info("Startup message sent to group")
-
         logger.info("Startup sequence completed successfully")
         return True
 
@@ -108,12 +90,6 @@ async def shutdown_sequence():
     logger.info("Starting shutdown sequence...")
 
     try:
-        # Send shutdown message to group
-        if should_send_shutdown_message():
-            message = template_shutdown()
-            send_message(message)
-            logger.info("Shutdown message sent to group")
-
         # Stop alert engine
         alert_engine = get_alert_engine()
         await alert_engine.stop()
