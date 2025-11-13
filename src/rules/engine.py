@@ -162,8 +162,8 @@ class AlertEngine:
         last_condition = self.last_condition.get(condition_tracker_key)
 
         # RECOVERY ZONES (to reset alert permission):
-        # - For OVERSOLD: RSI must go above 35 to reset
-        # - For OVERBOUGHT: RSI must go below 65 to reset
+        # - For OVERSOLD/EXTREME_OVERSOLD: RSI must go above 35 to reset
+        # - For OVERBOUGHT/EXTREME_OVERBOUGHT: RSI must go below 65 to reset
         RECOVERY_OVERSOLD_THRESHOLD = 35
         RECOVERY_OVERBOUGHT_THRESHOLD = 65
 
@@ -180,10 +180,13 @@ class AlertEngine:
             return
 
         # ANTI-SPAM LOGIC: Check if we can alert
-        # Only alert if:
-        # 1. Never alerted this condition before (last_condition is None or different)
-        # 2. OR condition was reset (went through recovery zone)
-        if last_condition == current_condition:
+        # Allow alert if:
+        # 1. Never alerted this condition before (last_condition is None)
+        # 2. OR condition changed (OVERSOLD→EXTREME_OVERSOLD, OVERBOUGHT→EXTREME_OVERBOUGHT, etc)
+        # 3. OR went through recovery zone
+
+        # Same condition persists without recovery = skip (anti-spam)
+        if last_condition is not None and last_condition == current_condition:
             # Same condition as before, no recovery happened - SKIP ALERT (anti-spam)
             logger.debug(f"Anti-spam: {symbol} {interval} still {current_condition}, RSI={current_rsi:.2f} (no recovery)")
             return
