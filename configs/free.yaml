@@ -62,7 +62,8 @@ alerts:
   timezone: "America/Sao_Paulo"
 
   # Consolidate multiple timeframe alerts into one message
-  consolidate_multi_tf: true
+  # DISABLED: Redundant with 6s consolidation window (mega-alerts already show multi-TF)
+  consolidate_multi_tf: false
 
   # Circuit breaker for extreme volatility
   circuit_breaker:
