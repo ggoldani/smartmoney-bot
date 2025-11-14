@@ -82,8 +82,7 @@ def fetch_recent_candles_for_rsi(symbol: str, interval: str, period: int = 14) -
         candles = session.query(Candle).filter(
             and_(
                 Candle.symbol == symbol,
-                Candle.interval == interval,
-                Candle.is_closed == 1
+                Candle.interval == interval
             )
         ).order_by(Candle.open_time.desc()).limit(limit).all()
 

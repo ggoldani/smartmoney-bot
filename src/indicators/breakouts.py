@@ -70,10 +70,11 @@ def check_breakout(symbol: str, interval: str, current_price: float,
         return None
 
     # Apply margin to prevent noise (e.g., 0.1% above high or below low)
-    margin_multiplier = 1 + (margin_pct / 100)
+    margin_up = 1 + (margin_pct / 100)      # For bull: 1.001 (0.1% above)
+    margin_down = 1 - (margin_pct / 100)    # For bear: 0.999 (0.1% below)
 
     # Bullish breakout: current price > previous high + margin
-    if current_price > prev_candle["high"] * margin_multiplier:
+    if current_price > prev_candle["high"] * margin_up:
         change_pct = ((current_price - prev_candle["high"]) / prev_candle["high"]) * 100
         return {
             "type": "BULL",
@@ -85,7 +86,7 @@ def check_breakout(symbol: str, interval: str, current_price: float,
         }
 
     # Bearish breakdown: current price < previous low - margin
-    if current_price < prev_candle["low"] / margin_multiplier:
+    if current_price < prev_candle["low"] * margin_down:
         change_pct = ((prev_candle["low"] - current_price) / prev_candle["low"]) * 100
         return {
             "type": "BEAR",

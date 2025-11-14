@@ -124,8 +124,13 @@ class AlertEngine:
                         logger.debug(f"Alert engine initialized for {symbol} {interval}: starting from next candle after {candle.open_time}")
                         continue
 
-                    # Only process if candle is newer than last processed
-                    if candle.open_time > last_open_time:
+                    # Process if:
+                    # 1. New candle (open_time > last_processed) OR
+                    # 2. Current open candle being updated (open_time == last_processed AND is_closed=False)
+                    is_new_candle = candle.open_time > last_open_time
+                    is_open_candle_update = (candle.open_time == last_open_time and not candle.is_closed)
+
+                    if is_new_candle or is_open_candle_update:
                         candles_to_process.append({
                             "symbol": candle.symbol,
                             "interval": candle.interval,
@@ -134,9 +139,11 @@ class AlertEngine:
                             "is_closed": candle.is_closed
                         })
 
-                        self.last_processed[key] = candle.open_time
-                        # Clear alert history for this symbol/interval (new candle started)
-                        self._clear_candle_alerts(symbol, interval, last_open_time)
+                        # Only update last_processed and clear alerts if it's a NEW candle
+                        if is_new_candle:
+                            self.last_processed[key] = candle.open_time
+                            # Clear alert history for this symbol/interval (new candle started)
+                            self._clear_candle_alerts(symbol, interval, last_open_time)
 
         if candles_to_process:
             logger.debug(f"Processing {len(candles_to_process)} candles (open or closed)")
@@ -326,9 +333,18 @@ class AlertEngine:
             return
 
         # Validate required keys in result
-        required_keys = {'type', 'price', 'prev_high', 'prev_low', 'change_pct'}
+        required_keys = {'type', 'price', 'change_pct'}
         if not all(k in result for k in required_keys):
             logger.warning(f"Breakout result missing required keys. Expected {required_keys}, got {set(result.keys())}")
+            return
+
+        # Validate type-specific keys
+        breakout_type = result['type']
+        if breakout_type == 'BULL' and 'prev_high' not in result:
+            logger.warning(f"BULL breakout missing prev_high. Got {set(result.keys())}")
+            return
+        if breakout_type == 'BEAR' and 'prev_low' not in result:
+            logger.warning(f"BEAR breakout missing prev_low. Got {set(result.keys())}")
             return
 
         condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
@@ -492,19 +508,18 @@ class AlertEngine:
         hourly_count = self.throttler.global_history.count_in_last_hour()
         if hourly_count >= self.throttler.max_alerts_per_hour:
             logger.warning(f"Hourly limit reached ({hourly_count}), discarding {len(self.pending_alerts)} pending")
+            # Clear alerted_candles for discarded alerts (allow retry later if limit resets)
+            for alert in self.pending_alerts:
+                self.alerted_candles.pop(alert['alert_key'], None)
+                self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
             self.pending_alerts = []
             return
 
-        # Save alerts before sending (in case send fails)
+        # Save alerts before sending
         alerts_to_send = self.pending_alerts[:]
         self.pending_alerts = []
 
-        # Update state FIRST (before sending) to prevent duplicates on network failures
-        for alert in alerts_to_send:
-            self.throttler.record_alert(alert['condition_key'])
-            self.last_condition[alert['tracker_key']] = alert['condition']
-
-        # Send (failures won't revert state, preventing duplicate alerts on outages)
+        # Send FIRST (state updated AFTER success inside send functions)
         if len(alerts_to_send) == 1:
             self._send_single_alert(alerts_to_send[0])
         else:
@@ -516,14 +531,23 @@ class AlertEngine:
             template = alert['template_func'](alert)
         except Exception as e:
             logger.error(f"Template generation failed for {alert['type']} {alert.get('condition')}: {e}")
+            # Template failed: remove from alerted_candles to allow retry
+            self.alerted_candles.pop(alert['alert_key'], None)
+            self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
             return False
 
         success = send_message(template)
 
         if success:
+            # Update state AFTER successful send
+            self.throttler.record_alert(alert['condition_key'])
+            self.last_condition[alert['tracker_key']] = alert['condition']
             logger.info(f"Alert sent: {alert['type']} {alert['condition']}")
         else:
+            # Send failed: remove from alerted_candles to allow retry
             logger.error(f"Failed to send alert: {alert['type']} {alert['condition']}")
+            self.alerted_candles.pop(alert['alert_key'], None)
+            self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
 
         return success
 
@@ -533,9 +557,17 @@ class AlertEngine:
         success = send_message(message)
 
         if success:
+            # Update state AFTER successful send
+            for alert in alerts:
+                self.throttler.record_alert(alert['condition_key'])
+                self.last_condition[alert['tracker_key']] = alert['condition']
             logger.info(f"Mega-alert sent: {len(alerts)} alerts consolidated")
         else:
+            # Send failed: remove all from alerted_candles to allow retry
             logger.error(f"Failed to send mega-alert with {len(alerts)} alerts")
+            for alert in alerts:
+                self.alerted_candles.pop(alert['alert_key'], None)
+                self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
 
         return success
 
