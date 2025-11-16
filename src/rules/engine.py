@@ -85,8 +85,10 @@ class AlertEngine:
 
     def _initialize_conditions(self, symbol: str, interval: str, current_price: float, open_time: int):
         """
-        Initialize last_condition on startup to prevent duplicate alerts after restart.
+        Initialize last_condition AND alerted_candles on startup to prevent duplicate alerts.
         Checks current conditions WITHOUT sending alerts, only to populate state.
+
+        CRITICAL: Must mark alerted_candles to prevent alerts if recovery zone resets last_condition.
         """
         # Initialize RSI condition
         if is_indicator_enabled('rsi'):
@@ -98,7 +100,12 @@ class AlertEngine:
                 result = analyze_rsi(symbol, interval, overbought, oversold, period)
                 if result and result.get('condition') != 'NORMAL':
                     condition_key = f"{symbol}_{interval}_RSI"
+                    alert_key = f"{symbol}_{interval}_{open_time}_{result['condition']}"
+
                     self.last_condition[condition_key] = result['condition']
+                    self.alerted_candles[alert_key] = True
+                    self.alerted_candles_with_timestamp[alert_key] = time.time()
+
                     logger.debug(f"Initialized RSI condition: {symbol} {interval} = {result['condition']}")
 
         # Initialize Breakout condition
@@ -109,7 +116,12 @@ class AlertEngine:
                 result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
                 if result:
                     condition_key = f"{symbol}_{interval}_BREAKOUT"
+                    alert_key = f"{symbol}_{interval}_{open_time}_BREAKOUT_{result['type']}"
+
                     self.last_condition[condition_key] = result['type']
+                    self.alerted_candles[alert_key] = True
+                    self.alerted_candles_with_timestamp[alert_key] = time.time()
+
                     logger.debug(f"Initialized Breakout condition: {symbol} {interval} = {result['type']}")
 
     async def check_for_new_candles(self):
