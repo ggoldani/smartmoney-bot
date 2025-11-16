@@ -237,6 +237,10 @@ configs/
 - **Bull:** Price > previous_high + 0.1% (🚀)
 - **Bear:** Price < previous_low - 0.1% (📉)
 - **TFs:** 1d, 1w
+- **Anti-spam:** Não reseta durante candle aberto (previne múltiplos alertas por oscilação)
+  - Preço oscila dentro/fora do range → sem novo alerta
+  - **Reset:** Apenas quando novo candle começa (permite novo sinal)
+  - Exemplo: Rompimento 1d com preço subindo/descendo min/max = 1 alerta (não 10x)
 
 ### Consolidação de Alertas
 - **Janela:** 6 segundos (cobre 2 ciclos de check de 5s)

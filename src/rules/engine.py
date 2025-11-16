@@ -83,6 +83,35 @@ class AlertEngine:
         """Generate unique key for candle tracking."""
         return f"{symbol}_{interval}"
 
+    def _initialize_conditions(self, symbol: str, interval: str, current_price: float, open_time: int):
+        """
+        Initialize last_condition on startup to prevent duplicate alerts after restart.
+        Checks current conditions WITHOUT sending alerts, only to populate state.
+        """
+        # Initialize RSI condition
+        if is_indicator_enabled('rsi'):
+            rsi_timeframes = self.rsi_config.get('timeframes', [])
+            if interval in rsi_timeframes:
+                period = self.rsi_config.get('period', 14)
+                overbought = self.rsi_config.get('overbought', 70)
+                oversold = self.rsi_config.get('oversold', 30)
+                result = analyze_rsi(symbol, interval, overbought, oversold, period)
+                if result and result.get('condition') != 'NORMAL':
+                    condition_key = f"{symbol}_{interval}_RSI"
+                    self.last_condition[condition_key] = result['condition']
+                    logger.debug(f"Initialized RSI condition: {symbol} {interval} = {result['condition']}")
+
+        # Initialize Breakout condition
+        if is_indicator_enabled('breakout'):
+            breakout_timeframes = self.breakout_config.get('timeframes', [])
+            if interval in breakout_timeframes:
+                margin_pct = self.breakout_config.get('margin_percent', 0.1)
+                result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
+                if result:
+                    condition_key = f"{symbol}_{interval}_BREAKOUT"
+                    self.last_condition[condition_key] = result['type']
+                    logger.debug(f"Initialized Breakout condition: {symbol} {interval} = {result['type']}")
+
     async def check_for_new_candles(self):
         """
         Check database for latest candles (open OR closed) since last check.
@@ -121,6 +150,9 @@ class AlertEngine:
                     # Initialize on first run: skip all existing candles, start from next one
                     if last_open_time is None:
                         self.last_processed[key] = candle.open_time
+                        # Initialize last_condition to prevent duplicate alerts on restart
+                        # (breakouts can persist for days on long timeframes like 1W)
+                        self._initialize_conditions(symbol, interval, candle.close, candle.open_time)
                         logger.debug(f"Alert engine initialized for {symbol} {interval}: starting from next candle after {candle.open_time}")
                         continue
 
