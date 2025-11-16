@@ -151,11 +151,22 @@ class AlertEngine:
         return candles_to_process
 
     def _clear_candle_alerts(self, symbol: str, interval: str, old_open_time: int):
-        """Clear alert flags for old candle when new candle starts."""
+        """Clear alert flags and conditions for old candle when new candle starts."""
+        # Clear alerted_candles flags for the old candle
         prefix = f"{symbol}_{interval}_{old_open_time}_"
         keys_to_remove = [k for k in self.alerted_candles.keys() if k.startswith(prefix)]
         for key in keys_to_remove:
             del self.alerted_candles[key]
+            # Also remove from timestamp dict
+            self.alerted_candles_with_timestamp.pop(key, None)
+
+        # Reset last_condition for BREAKOUT (allows new alerts on new candle)
+        # RSI keeps last_condition (uses recovery zone instead)
+        breakout_key = f"{symbol}_{interval}_BREAKOUT"
+        if breakout_key in self.last_condition:
+            self.last_condition[breakout_key] = None
+            logger.debug(f"Reset breakout condition for new candle: {symbol} {interval}")
+
         if keys_to_remove:
             logger.debug(f"Cleared {len(keys_to_remove)} alert flags for old candle")
 
@@ -324,12 +335,9 @@ class AlertEngine:
         result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
 
         if not result:
-            # Price back in range = recovery
-            condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
-            last_breakout = self.last_condition.get(condition_tracker_key)
-            if last_breakout is not None:
-                logger.debug(f"Breakout recovery: {symbol} {interval}")
-                self.last_condition[condition_tracker_key] = None
+            # Price back in range - do NOT reset last_condition during open candle
+            # This prevents spam from price oscillations within same candle
+            # last_condition will be cleared when new candle starts (via _clear_candle_alerts)
             return
 
         # Validate required keys in result
