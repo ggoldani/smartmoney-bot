@@ -30,9 +30,34 @@ def _run(coro):
         # No running loop, use asyncio.run()
         return asyncio.run(coro)
 
+async def send_message_async(text: str, to_admin: bool = False) -> bool:
+    """
+    Send message to Telegram (async version).
+
+    Args:
+        text: Message text
+        to_admin: If True, send to admin channel; otherwise send to main channel
+
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    target_chat_id = ADMIN_CHANNEL_ID if to_admin else CHANNEL_CHAT_ID
+
+    if not BOT_TOKEN or not target_chat_id or Bot is None:
+        prefix = "[admin]" if to_admin else "[group]"
+        logger.info(f"[dry-run] {prefix} MSG -> {text}")
+        return True
+
+    try:
+        await _send_message_async(text, target_chat_id)
+        return True
+    except Exception as e:
+        logger.exception(f"Failed to send message to {'admin' if to_admin else 'group'}: {e}")
+        return False
+
 def send_message(text: str, to_admin: bool = False) -> bool:
     """
-    Send message to Telegram.
+    Send message to Telegram (sync wrapper for backward compatibility).
 
     Args:
         text: Message text

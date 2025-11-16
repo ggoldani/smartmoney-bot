@@ -36,7 +36,7 @@ from src.notif.templates import (
     template_mega_alert
 )
 from src.notif.throttle import get_throttler
-from src.telegram_bot import send_message
+from src.telegram_bot import send_message, send_message_async
 from src.storage.db import SessionLocal
 from src.storage.models import Candle
 
@@ -416,7 +416,7 @@ class AlertEngine:
 
         # Send consolidated alert
         message = template_rsi_multi_tf(critical_conditions)
-        success = send_message(message)
+        success = await send_message_async(message)
 
         if success:
             self.throttler.record_alert(condition_key)
@@ -444,7 +444,7 @@ class AlertEngine:
         cleanup_counter = 0
         while self.running:
             await asyncio.sleep(self.consolidation_interval)
-            self._send_consolidated_alerts()
+            await self._send_consolidated_alerts()
 
             # Cleanup old alert entries every 10 cycles (60 seconds)
             cleanup_counter += 1
@@ -499,7 +499,7 @@ class AlertEngine:
         if keys_to_remove:
             logger.debug(f"Cleaned up {len(keys_to_remove)} stale condition entries")
 
-    def _send_consolidated_alerts(self):
+    async def _send_consolidated_alerts(self):
         """Send pending alerts: single or mega-alert"""
         if not self.pending_alerts:
             return
@@ -508,10 +508,11 @@ class AlertEngine:
         hourly_count = self.throttler.global_history.count_in_last_hour()
         if hourly_count >= self.throttler.max_alerts_per_hour:
             logger.warning(f"Hourly limit reached ({hourly_count}), discarding {len(self.pending_alerts)} pending")
-            # Clear alerted_candles for discarded alerts (allow retry later if limit resets)
+            # Update last_condition to activate anti-spam (prevents re-detection)
             for alert in self.pending_alerts:
-                self.alerted_candles.pop(alert['alert_key'], None)
-                self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
+                self.last_condition[alert['tracker_key']] = alert['condition']
+            # DO NOT clear alerted_candles - flags remain to prevent spam
+            # Flags will be cleaned up by TTL cleanup (1h) or when new candle starts
             self.pending_alerts = []
             return
 
@@ -521,22 +522,21 @@ class AlertEngine:
 
         # Send FIRST (state updated AFTER success inside send functions)
         if len(alerts_to_send) == 1:
-            self._send_single_alert(alerts_to_send[0])
+            await self._send_single_alert(alerts_to_send[0])
         else:
-            self._send_mega_alert(alerts_to_send)
+            await self._send_mega_alert(alerts_to_send)
 
-    def _send_single_alert(self, alert: Dict) -> bool:
+    async def _send_single_alert(self, alert: Dict) -> bool:
         """Send single alert. Returns True if successful."""
         try:
             template = alert['template_func'](alert)
         except Exception as e:
             logger.error(f"Template generation failed for {alert['type']} {alert.get('condition')}: {e}")
-            # Template failed: remove from alerted_candles to allow retry
-            self.alerted_candles.pop(alert['alert_key'], None)
-            self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
+            # Template failed: keep flags to prevent spam, but don't update last_condition
+            # This allows retry if template bug is fixed, but prevents infinite loop
             return False
 
-        success = send_message(template)
+        success = await send_message_async(template)
 
         if success:
             # Update state AFTER successful send
@@ -544,17 +544,17 @@ class AlertEngine:
             self.last_condition[alert['tracker_key']] = alert['condition']
             logger.info(f"Alert sent: {alert['type']} {alert['condition']}")
         else:
-            # Send failed: remove from alerted_candles to allow retry
-            logger.error(f"Failed to send alert: {alert['type']} {alert['condition']}")
-            self.alerted_candles.pop(alert['alert_key'], None)
-            self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
+            # Send failed: update last_condition to activate anti-spam (prevents infinite retry loop)
+            # Alert is lost (no automatic retry) - admin should check logs and fix network/Telegram issue
+            logger.error(f"Failed to send alert: {alert['type']} {alert['condition']} - alert discarded, anti-spam activated")
+            self.last_condition[alert['tracker_key']] = alert['condition']
 
         return success
 
-    def _send_mega_alert(self, alerts: List[Dict]) -> bool:
+    async def _send_mega_alert(self, alerts: List[Dict]) -> bool:
         """Send consolidated mega-alert. Returns True if successful."""
         message = template_mega_alert(alerts)
-        success = send_message(message)
+        success = await send_message_async(message)
 
         if success:
             # Update state AFTER successful send
@@ -563,11 +563,11 @@ class AlertEngine:
                 self.last_condition[alert['tracker_key']] = alert['condition']
             logger.info(f"Mega-alert sent: {len(alerts)} alerts consolidated")
         else:
-            # Send failed: remove all from alerted_candles to allow retry
-            logger.error(f"Failed to send mega-alert with {len(alerts)} alerts")
+            # Send failed: update last_condition to activate anti-spam (prevents infinite retry loop)
+            # Alerts are lost (no automatic retry) - admin should check logs and fix network/Telegram issue
+            logger.error(f"Failed to send mega-alert with {len(alerts)} alerts - alerts discarded, anti-spam activated")
             for alert in alerts:
-                self.alerted_candles.pop(alert['alert_key'], None)
-                self.alerted_candles_with_timestamp.pop(alert['alert_key'], None)
+                self.last_condition[alert['tracker_key']] = alert['condition']
 
         return success
 
