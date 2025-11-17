@@ -116,7 +116,7 @@ class AlertEngine:
                 result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
                 if result:
                     condition_key = f"{symbol}_{interval}_BREAKOUT"
-                    alert_key = f"{symbol}_{interval}_{open_time}_BREAKOUT_{result['type']}"
+                    alert_key = f"{symbol}_{interval}_{open_time}_{result['type']}"
 
                     self.last_condition[condition_key] = result['type']
                     self.alerted_candles[alert_key] = True
@@ -410,7 +410,7 @@ class AlertEngine:
             return
 
         # Already alerted for this candle
-        alert_key = f"{symbol}_{interval}_{open_time}_BREAKOUT_{current_breakout_type}"
+        alert_key = f"{symbol}_{interval}_{open_time}_{current_breakout_type}"
         if alert_key in self.alerted_candles:
             return
 
