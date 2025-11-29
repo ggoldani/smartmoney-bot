@@ -10,7 +10,8 @@ from src.config import (
     get_symbols,
     get_backfill_config,
     get_bot_name,
-    get_bot_version
+    get_bot_version,
+    get_daily_summary_config
 )
 from src.utils.logging import setup_logging
 from src.telegram_bot import send_message, send_error_to_admin
@@ -136,6 +137,12 @@ async def run_bot():
         asyncio.create_task(healthcheck.run(), name="Healthcheck"),
         asyncio.create_task(shutdown_event.wait(), name="ShutdownWatcher")
     ]
+
+    # Add daily summary task if enabled
+    daily_summary_cfg = get_daily_summary_config()
+    if daily_summary_cfg.get('enabled', False):
+        tasks.append(asyncio.create_task(alert_engine._send_daily_summary(), name="DailySummary"))
+        logger.info(f"Daily summary enabled: {daily_summary_cfg.get('send_time_brt', '21:00')} BRT")
 
     try:
         # Wait for shutdown signal

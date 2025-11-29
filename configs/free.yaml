@@ -76,6 +76,14 @@ alerts:
     enabled: true
     max_alerts_per_hour: 20
 
+  # Daily summary: Fear & Greed Index + RSI 1D
+  daily_summary:
+    enabled: true
+    # Time to send summary in BRT (21:00 BRT = 00:00 UTC next day)
+    send_time_brt: "21:00"
+    # Tolerance window in minutes (allows summary to send within ±N minutes of scheduled time)
+    send_window_minutes: 5
+
   # Don't send alerts for conditions that happened while bot was offline
   skip_retroactive_alerts: true
 

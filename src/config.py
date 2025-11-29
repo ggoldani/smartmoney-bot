@@ -208,6 +208,15 @@ def get_logging_config() -> Dict[str, Any]:
     return get_config().get('logging', {})
 
 
+def get_daily_summary_config() -> Dict[str, Any]:
+    """Get daily summary configuration with safe defaults."""
+    return {
+        'enabled': get_config().get('alerts.daily_summary.enabled', False),
+        'send_time_brt': get_config().get('alerts.daily_summary.send_time_brt', '21:00'),
+        'send_window_minutes': get_config().get('alerts.daily_summary.send_window_minutes', 5)
+    }
+
+
 # Validate critical env vars on import
 if not BOT_TOKEN:
     import sys

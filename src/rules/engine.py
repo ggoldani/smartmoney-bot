@@ -73,6 +73,9 @@ class AlertEngine:
         # Track timestamp of alerted candles for TTL cleanup (prevent unbounded growth)
         self.alerted_candles_with_timestamp: Dict[str, float] = {}  # key: alert_key, value: timestamp
 
+        # FIX #1: Track last candle for each symbol/interval (daily summary)
+        self.last_candle: Dict[str, Dict] = {}  # key: "symbol_interval", value: {close, timestamp}
+
         # Load config
         self.rsi_config = get_rsi_config()
         self.breakout_config = get_breakout_config()
@@ -493,6 +496,13 @@ class AlertEngine:
         # Collect breakout alerts
         self._collect_breakout_alert(symbol, interval, current_price, open_time)
 
+        # FIX #1: Update last_candle tracking for daily summary
+        candle_key = f"{symbol}_{interval}"
+        self.last_candle[candle_key] = {
+            'close': current_price,
+            'timestamp': open_time
+        }
+
     async def _consolidation_timer(self):
         """Timer: send consolidated alerts every 6 seconds and cleanup old alert entries"""
         cleanup_counter = 0
@@ -668,6 +678,138 @@ class AlertEngine:
         """Stop the alert engine gracefully."""
         logger.info("Stopping alert engine...")
         self.running = False
+
+    async def _send_daily_summary(self):
+        """
+        Daily summary task: send Fear & Greed Index + RSI 1D at 21:00 BRT (00:00 UTC).
+        Runs continuously, calculating next send time each cycle.
+        """
+        from src.datafeeds.fear_greed import fetch_fear_greed_index, get_fear_greed_sentiment
+        from src.notif.templates import template_daily_summary
+        from src.utils.logging import logger
+        import pytz
+        from datetime import datetime, timedelta
+
+        # Get config
+        from src.config import get_daily_summary_config
+        config = get_daily_summary_config()
+
+        if not config.get('enabled', False):
+            logger.info("Daily summary disabled in config")
+            return
+
+        send_time_brt = config.get('send_time_brt', '21:00')
+        send_window_minutes = config.get('send_window_minutes', 5)
+
+        # Parse send time (HH:MM format)
+        try:
+            hour, minute = map(int, send_time_brt.split(':'))
+        except (ValueError, TypeError):
+            logger.error(f"Invalid send_time_brt format: {send_time_brt}")
+            return
+
+        brt_tz = pytz.timezone('America/Sao_Paulo')
+
+        while self.running:
+            try:
+                # Calculate next send time (21:00 BRT today or tomorrow)
+                now_utc = datetime.now(pytz.UTC)
+                now_brt = now_utc.astimezone(brt_tz)
+
+                # Create target datetime at 21:00 BRT today
+                target_brt = now_brt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+                # If target time has passed, use tomorrow
+                if target_brt <= now_brt:
+                    target_brt = (now_brt + timedelta(days=1)).replace(
+                        hour=hour, minute=minute, second=0, microsecond=0
+                    )
+
+                # Calculate sleep duration
+                now_utc = datetime.now(pytz.UTC)
+                now_brt = now_utc.astimezone(brt_tz)
+                sleep_duration = (target_brt - now_brt).total_seconds()
+
+                logger.info(
+                    f"Daily summary scheduled for {target_brt.strftime('%Y-%m-%d %H:%M BRT')} "
+                    f"(in {sleep_duration:.0f}s)"
+                )
+
+                # Sleep until send time
+                await asyncio.sleep(max(0, sleep_duration))
+
+                # Check if still enabled and running
+                if not self.running:
+                    break
+
+                config = get_daily_summary_config()
+                if not config.get('enabled', False):
+                    logger.info("Daily summary was disabled, pausing task")
+                    break
+
+                # Get current time
+                now_brt = datetime.now(pytz.UTC).astimezone(brt_tz)
+
+                # Check if we're within send window (±N minutes)
+                window_start = now_brt.replace(hour=hour, minute=minute, second=0) - timedelta(
+                    minutes=send_window_minutes
+                )
+                window_end = now_brt.replace(hour=hour, minute=minute, second=0) + timedelta(
+                    minutes=send_window_minutes
+                )
+
+                if window_start <= now_brt <= window_end:
+                    # Fetch Fear & Greed Index
+                    fgi_value, fgi_label = await fetch_fear_greed_index()
+                    fgi_emoji, fgi_sentiment = get_fear_greed_sentiment(fgi_value)
+
+                    # Get RSI 1D for BTCUSDT
+                    symbol = "BTCUSDT"
+                    interval = "1d"
+                    period = self.rsi_config.get('period', 14)
+                    overbought = self.rsi_config.get('overbought', 70)
+                    oversold = self.rsi_config.get('oversold', 30)
+
+                    rsi_result = analyze_rsi(symbol, interval, overbought, oversold, period)
+                    rsi_current = rsi_result.get('rsi', 0) if rsi_result else 0
+
+                    # Get previous day price
+                    candle_key = f"{symbol}_{interval}"
+                    candle_data = self.last_candle.get(candle_key, {})
+                    price_current = candle_data.get('close', 0)
+                    price_previous = price_current  # TODO: fetch from DB if needed
+
+                    # Use RSI from previous day (fallback to current if not available)
+                    rsi_previous = rsi_current
+
+                    # Generate and send message
+                    message = template_daily_summary(
+                        symbol=symbol,
+                        fear_greed_value=fgi_value if fgi_value else 0,
+                        fear_greed_label=fgi_sentiment,
+                        rsi_value=rsi_current,
+                        rsi_previous=rsi_previous,
+                        price_current=price_current,
+                        price_previous=price_previous,
+                        fear_emoji=fgi_emoji
+                    )
+
+                    success = await send_message_async(message)
+                    if success:
+                        logger.info("✅ Daily summary sent")
+                        self.throttler.record_alert("DAILY_SUMMARY")
+                    else:
+                        logger.error("❌ Failed to send daily summary")
+                else:
+                    logger.debug(f"Outside send window ({send_window_minutes}min tolerance)")
+
+            except asyncio.CancelledError:
+                logger.info("Daily summary task cancelled")
+                break
+            except Exception as e:
+                logger.exception(f"Error in daily summary task: {e}")
+                # Sleep before retry
+                await asyncio.sleep(60)
 
 
 # Global engine instance

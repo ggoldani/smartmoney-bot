@@ -404,3 +404,74 @@ Detalhes:
 {details}
 
 ⏰ {format_datetime_br()}"""
+
+
+def template_daily_summary(
+    symbol: str,
+    fear_greed_value: int,
+    fear_greed_label: str,
+    rsi_value: float,
+    rsi_previous: float,
+    price_current: float,
+    price_previous: float,
+    fear_emoji: str = "❓"
+) -> str:
+    """
+    Template for daily summary alert (21:00 BRT / 00:00 UTC).
+
+    Args:
+        symbol: Trading pair (e.g., "BTCUSDT")
+        fear_greed_value: Fear & Greed Index value (0-100)
+        fear_greed_label: Description from API (e.g., "Extreme Greed")
+        rsi_value: Current 1D RSI value
+        rsi_previous: Previous day RSI value
+        price_current: Current closing price
+        price_previous: Previous day closing price
+        fear_emoji: Emoji representing sentiment
+    """
+    symbol_display = format_symbol_display(symbol)
+    timestamp = format_datetime_br()
+
+    # Calculate daily variation
+    if price_previous > 0:
+        variation_pct = ((price_current - price_previous) / price_previous) * 100
+    else:
+        variation_pct = 0
+
+    variation_sign = "+" if variation_pct >= 0 else ""
+    variation_formatted = format_percentage_br(abs(variation_pct))
+
+    # Format prices
+    price_current_formatted = format_price_br(price_current)
+    price_previous_formatted = format_price_br(price_previous)
+
+    # Format RSI values
+    rsi_current_formatted = format_rsi_value(rsi_value)
+    rsi_previous_formatted = format_rsi_value(rsi_previous)
+
+    # Calculate RSI trend
+    rsi_change = rsi_value - rsi_previous
+    if rsi_change > 2:
+        rsi_trend_emoji = "📈"
+    elif rsi_change < -2:
+        rsi_trend_emoji = "📉"
+    else:
+        rsi_trend_emoji = "➡️"
+
+    return f"""🌙 RESUMO DIÁRIO - {symbol_display} 📊
+
+📅 {timestamp}
+
+{fear_emoji} Fear & Greed Index
+└─ {fear_greed_value}/100 - {fear_greed_label}
+
+📊 RSI (1 dia)
+└─ {rsi_current_formatted} {rsi_trend_emoji}
+   (Anterior: {rsi_previous_formatted})
+
+💰 Variação do Dia
+└─ {variation_sign}{variation_formatted}
+   De: {price_previous_formatted}
+   Para: {price_current_formatted}
+
+{ALERT_DISCLAIMER}"""
