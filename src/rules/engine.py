@@ -326,12 +326,14 @@ class AlertEngine:
         recovery_lower = recovery_config.get('lower', 35)  # Safe default
         recovery_upper = recovery_config.get('upper', 65)  # Safe default
 
-        if recovery_lower < current_rsi < recovery_upper:
+        # RSI entered recovery zone? Reset state to allow new alerts
+        if recovery_lower <= current_rsi <= recovery_upper:
             if last_condition is not None:
                 logger.debug(f"RSI recovery: {symbol} {interval} RSI={current_rsi:.2f}")
                 self.last_condition[condition_tracker_key] = None
             return
 
+        # RSI is in NORMAL range but outside recovery zone (shouldn't happen with proper config, but handle it)
         if current_condition == "NORMAL":
             return
 

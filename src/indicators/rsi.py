@@ -168,17 +168,17 @@ def analyze_rsi(
     condition = "NORMAL"
 
     # Check EXTREME conditions first
-    if rsi > extreme_overbought:
+    if rsi >= extreme_overbought:
         condition = "EXTREME_OVERBOUGHT"
         is_overbought = True
-    elif rsi < extreme_oversold:
+    elif rsi <= extreme_oversold:
         condition = "EXTREME_OVERSOLD"
         is_oversold = True
     # Check normal conditions
-    elif rsi > overbought:
+    elif rsi >= overbought:
         condition = "OVERBOUGHT"
         is_overbought = True
-    elif rsi < oversold:
+    elif rsi <= oversold:
         condition = "OVERSOLD"
         is_oversold = True
 

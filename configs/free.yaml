@@ -30,10 +30,10 @@ indicators:
     # Normal thresholds
     overbought: 70
     oversold: 30
-    # Extreme thresholds (detect market extremes: >85 overbought, <15 oversold)
+    # Extreme thresholds (detect market extremes: >=75 overbought, <=25 oversold)
     # These generate higher-priority alerts (🚨🔴 vs 🔴)
-    extreme_overbought: 85
-    extreme_oversold: 15
+    extreme_overbought: 75
+    extreme_oversold: 25
     # Recovery zone: RSI values that reset alert state (prevents spam on reversals)
     # When RSI enters this zone, state is reset allowing new alerts on next condition change
     recovery_zone:

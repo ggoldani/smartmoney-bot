@@ -130,8 +130,8 @@ def get_rsi_config() -> Dict[str, Any]:
     rsi_config.setdefault('period', 14)
     rsi_config.setdefault('overbought', 70)
     rsi_config.setdefault('oversold', 30)
-    rsi_config.setdefault('extreme_overbought', 85)
-    rsi_config.setdefault('extreme_oversold', 15)
+    rsi_config.setdefault('extreme_overbought', 75)
+    rsi_config.setdefault('extreme_oversold', 25)
     rsi_config.setdefault('timeframes', [])
     rsi_config.setdefault('alert_on_touch', True)
 
