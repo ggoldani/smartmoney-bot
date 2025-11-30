@@ -54,6 +54,15 @@ indicators:
     # Alert immediately when price touches level (not on close)
     alert_on_touch: true
 
+  divergence:
+    enabled: true
+    # Timeframes to detect RSI divergence (bullish/bearish pivots)
+    timeframes: ["4h", "1d", "1w"]
+    # Number of candles to scan on startup
+    lookback: 20
+    # Enable verbose logging for divergence detection
+    debug_divergence: false
+
 # Alert configuration
 alerts:
   # Language and locale

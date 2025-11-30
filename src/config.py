@@ -217,6 +217,21 @@ def get_daily_summary_config() -> Dict[str, Any]:
     }
 
 
+def get_divergence_config() -> Dict[str, Any]:
+    """Get divergence detection configuration with safe defaults."""
+    div_config = get_config().get('indicators.divergence', {})
+
+    if not isinstance(div_config, dict):
+        div_config = {}
+
+    div_config.setdefault('enabled', True)
+    div_config.setdefault('timeframes', ['4h', '1d', '1w'])
+    div_config.setdefault('lookback', 20)
+    div_config.setdefault('debug_divergence', False)
+
+    return div_config
+
+
 # Validate critical env vars on import
 if not BOT_TOKEN:
     import sys
