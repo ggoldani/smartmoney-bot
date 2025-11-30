@@ -1,8 +1,8 @@
 # SmartMoney Bot
 
-Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
+Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts + **divergência RSI** (pivots bullish/bearish) + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
 
-**Status:** v2.2.0 - Sprint 3 completo ✅ (Daily Summary implementado) | Tier: FREE
+**Status:** v2.3.0 - Sprint 4 completo ✅ (RSI Divergence implementado) | Tier: FREE
 
 ---
 
@@ -48,9 +48,11 @@ docker-compose up -d
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
 | **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:01 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior** |
 | **3** ✅ | **Fear & Greed API** | **CoinMarketCap API v3 (`value`/`value_classification`) + exponential backoff (2s-4s-8s)** |
-| **4** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
-| **4** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
-| **4** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
+| **4** ✅ | **RSI Divergence** | **3-candle pivots (bullish=lowest, bearish=highest) + RSI confirmation (price↔RSI diverge) + 2-pivot alert** |
+| **4** ✅ | **Divergence Config** | **Timeframes (4h, 1d, 1w), lookback (20 candles), debug mode, estado persiste entre restarts** |
+| **5** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
+| **5** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
+| **5** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
 
 ---
 
@@ -94,6 +96,12 @@ indicators:
   breakout:
     timeframes: ["1d", "1w"]
     margin_percent: 0.1     # 0.1% threshold
+
+  divergence:
+    enabled: true                       # RSI divergence detection
+    timeframes: ["4h", "1d", "1w"]      # Timeframes to monitor
+    lookback: 20                        # Candles to scan on startup
+    debug_divergence: false             # Verbose logging (pivots detected)
 
 alerts:
   timezone: "America/Sao_Paulo"
@@ -209,6 +217,7 @@ src/
 ├── indicators/
 │   ├── rsi.py           # RSI (Wilder's smoothing)
 │   ├── breakouts.py     # Breakout detection
+│   ├── divergence.py    # RSI divergence (3-candle pivots, 2-pivot confirmation)
 │   └── [ma.py, sr_levels.py]  # Stubs para futuro
 ├── rules/
 │   ├── engine.py        # Alert loop (check every 5s) + _send_daily_summary() task (21:01 BRT)
@@ -233,7 +242,8 @@ configs/
 ```
 
 **Data Flow:**
-- **Real-time Alerts:** Binance WS → Candles → SQLite → Alert Engine (5s loop) → Indicators → Rules → Throttle → Telegram
+- **Real-time Alerts:** Binance WS → Candles → SQLite → Alert Engine (5s loop) → Indicators (RSI, Breakout, Divergence) → Rules → Throttle → Telegram
+- **Divergence:** 3-candle pivot detection → Compare with previous pivot → RSI confirmation → Direct alert (🔼/🔽, no consolidation)
 - **Daily Summary:** Scheduled task (21:01 BRT) → Fetch Fear & Greed API → Get RSI 1D/1W/1M + previous day candle → Format → Telegram
 
 ---
@@ -256,6 +266,18 @@ configs/
   - Preço oscila dentro/fora do range → sem novo alerta
   - **Reset:** Apenas quando novo candle começa (permite novo sinal)
   - Exemplo: Rompimento 1d com preço subindo/descendo min/max = 1 alerta (não 10x)
+
+### Divergência RSI
+- **Detecção:** 3-candle pivots (candle do meio é extremo)
+  - **Bullish:** Middle candle é lowest low (fundo)
+  - **Bearish:** Middle candle é highest high (topo)
+- **Confirmação:** Comparar com pivô anterior
+  - **BULLISH:** price↓ mas RSI↑ (ambos <50) = compra potencial (🔼)
+  - **BEARISH:** price↑ mas RSI↓ (ambos >50) = venda potencial (🔽)
+- **TFs:** 4h, 1d, 1w (independentes)
+- **Alerta:** Requer 2 pivots (estado persiste entre restarts)
+- **Janela:** Sem consolidação (direto para Telegram, impactante)
+- **Exemplo:** 1d cai para novo low mas RSI sobe = divergência bullish 1 alerta
 
 ### Consolidação de Alertas
 - **Janela:** 6 segundos (cobre 2 ciclos de check de 5s)
@@ -326,6 +348,9 @@ configs/
 | **Daily Summary não aparece** | **Task desabilitado, horário passou, ou API key inválida** | **Verificar: `grep "Daily summary" logs/bot.log` + `free.yaml` → `enabled: true` + `COINMARKETCAP_API_KEY` em `.env`** |
 | **Fear & Greed mostra "Indisponível"** | **API key ausente/inválida ou CoinMarketCap down** | **Verificar: `COINMARKETCAP_API_KEY` em `.env`, `grep "Fear & Greed" logs/bot.log` para retry attempts** |
 | **RSI não mostra no Daily Summary** | Dados insuficientes ou candle anterior não existe | Esperar 1-2 dias para dados acumularem, verificar `grep "RSI analysis" logs/bot.log` |
+| **Divergências não alertam** | Feature desabilitada ou sem pivots detectados | Verificar `free.yaml` → `indicators.divergence.enabled: true`, habilitar `debug_divergence: true` para logs, `grep "divergence_state" logs/bot.log` |
+| **Divergência re-alerta** | Comportamento esperado (precisa de 2 pivots) | BULLISH/BEARISH requer comparação entre pivots, cada novo pivô pode gerar novo alerta se confirmado |
+| **Estado divergence perdido** | Estado não persiste entre restarts | Verificar logs de `_initialize_divergence_state()`, `grep "Divergence state initialized" logs/bot.log` |
 | ModuleNotFoundError: No module named 'src' | PYTHONPATH não definido (Docker) | Adicionar `PYTHONPATH=/app` no docker-compose.yml environment |
 | unable to open database file | Filesystem read-only ou sem permissões | Remover `read_only: true` do docker-compose.yml, garantir `/data` volume com permissões 755 |
 | Bot não manda msg no Telegram | BOT_TOKEN inválido ou ausente em .env | Verificar: `cat .env \| grep BOT_TOKEN`, token deve vir exato do @BotFather, sem espaços |
@@ -337,29 +362,34 @@ configs/
 ```bash
 # 1. Test dry-run
 PYTHONPATH=. python src/main.py --dry-run
-# Expect: Backfill OK, WebSocket connected, RSI calculated
+# Expect: Backfill OK, WebSocket connected, RSI/Breakout/Divergence calculated
+# Look for: "Divergence state initialized for all timeframes"
 
-# 2. Database
+# 2. Run all tests (including divergence)
+PYTHONPATH=. pytest tests/ -v
+# Expect: All tests passing (including test_divergence.py: 40 tests)
+
+# 3. Database
 sqlite3 data.db "SELECT COUNT(*) FROM candles;"
 # Expect: 800 (200 candles × 4 timeframes)
 
-# 3. Telegram connectivity
+# 4. Telegram connectivity
 curl https://api.telegram.org/bot$BOT_TOKEN/getMe
 # Expect: JSON com info do bot
 
-# 4. Binance API
+# 5. Binance API
 curl https://api.binance.com/api/v3/ping
 # Expect: {} (empty JSON)
 
-# 5. Memory usage
+# 6. Memory usage
 docker stats smartmoney-free-bot --no-stream
 # Expect: <200MB steady-state
 
-# 6. Live test (1+ hour)
+# 7. Live test (1+ hour)
 PYTHONPATH=. python src/main.py
-# Expect: Startup message received, no crashes, stable
+# Expect: Startup message received, no crashes, stable, divergence_state persisted
 
-# 7. Graceful shutdown
+# 8. Graceful shutdown
 kill -SIGTERM <pid>
 # Expect: Shutdown message sent, clean exit
 ```

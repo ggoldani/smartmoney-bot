@@ -49,12 +49,13 @@ open htmlcov/index.html
 ```
 tests/
 ├── __init__.py              # Package marker
-├── conftest.py              # Shared fixtures (candles, config, env vars)
+├── conftest.py              # Shared fixtures (candles, config, env vars, mock ORM)
 ├── test_indicators.py       # RSI & breakout detection tests
 ├── test_formatter.py        # Brazilian formatting tests
 ├── test_config.py           # Configuration loading & validation tests
 ├── test_throttle.py         # Rate limiting & circuit breaker tests
 ├── test_daily_summary.py    # Fear & Greed Index & daily summary tests
+├── test_divergence.py       # RSI divergence detection tests (40 tests)
 └── README.md                # This file
 ```
 
@@ -174,13 +175,24 @@ Shared fixtures available to all tests:
 | `test_env_vars` | Set test environment variables |
 | `sample_candle_record` | Sample DB candle record |
 | `brt_timezone` | BRT timezone string |
+| `mock_candle` | Factory for Mock Candle ORM objects (spec=Candle, with `is_closed` property) |
 
 ## Pre-Commit
 
 Run before committing changes:
 
 ```bash
-PYTHONPATH=. pytest tests/ -v && echo "✓ All tests passed"
+# Run all tests (203 tests)
+PYTHONPATH=. pytest tests/ -v
+
+# Or run specific test file
+PYTHONPATH=. pytest tests/test_divergence.py -v  # 40 divergence tests
+
+# With coverage report
+PYTHONPATH=. pytest tests/ -v --cov=src --cov-report=term-missing
+
+# Quick check (pass/fail only)
+PYTHONPATH=. pytest tests/ -q && echo "✓ All tests passed"
 ```
 
 Or use in CI/CD pipeline.
@@ -202,23 +214,72 @@ Or use in CI/CD pipeline.
 - **Config:** 85%+ (validation logic tested)
 - **Throttle:** 95%+ (all scenarios covered)
 - **Daily Summary:** 90%+ (API, templates, scheduling, edge cases)
+- **Divergence:** 100%+ (pivot detection, RSI comparison, database mocking, edge cases)
 
 **Overall target:** 65-70% codebase coverage (focus on critical logic, skip async orchestration)
 
-**Total tests:** **163** (35 indicators + 40 formatter + 25 config + 30 throttle + **33 daily summary**) ✅
+**Total tests:** **203** (35 indicators + 40 formatter + 25 config + 30 throttle + 33 daily summary + **40 divergence**) ✅
 
 ## What's NOT Tested
 
 Intentionally skipped (complex async/integration):
 - WebSocket connection (`binance_ws.py`)
 - Telegram API calls (`telegram_bot.py`)
-- Alert engine async task scheduling (`rules/engine.py` - `_send_daily_summary()` task loop integration with asyncio)
+- Alert engine async task scheduling (`rules/engine.py` - `_send_daily_summary()` and `_process_divergences()` task loop integration with asyncio)
 - Database ORM queries (`storage/repo.py` - `get_previous_closed_candle()` actual DB queries)
 - Real CoinMarketCap API calls (mocked in unit tests via aiohttp mocks)
 
 These require integration tests or manual testing with mocked external services.
 
+**Note:** Divergence *core logic (pivot detection, RSI comparison, divergence validation) and database fetching patterns* are **fully unit tested (40 tests, 100% coverage)**. Only the async `_process_divergences()` loop integration and state persistence across restarts require integration testing.
+
 **Note:** Daily Summary *template formatting (RSI 1D/1W/1M ALTA/BAIXA, Fear & Greed emoji, price variation), configuration validation (send_time_brt: "21:01", window_minutes: 1), timing logic (21:01 BRT scheduling), and Fear & Greed sentiment mapping* are **fully unit tested (33 tests)**. Only the async task loop and actual database queries in `AlertEngine._send_daily_summary()` require integration testing.
+
+### `test_divergence.py` (40 tests) ✅ NEW
+- **Bullish Pivot Detection (`TestBullishPivot`, 5 tests):**
+  - Valid bullish pivot (middle candle is lowest of 3)
+  - Invalid pivots (not enough candles, middle not lowest)
+  - Edge cases (equal lows, single candle)
+
+- **Bearish Pivot Detection (`TestBearishPivot`, 5 tests):**
+  - Valid bearish pivot (middle candle is highest of 3)
+  - Invalid pivots (not enough candles, middle not highest)
+  - Edge cases (equal highs, single candle)
+
+- **Divergence Detection (`TestDetectDivergence`, 13 tests):**
+  - BULLISH: price↓ but RSI↑ (both <50) = bullish divergence
+  - BEARISH: price↑ but RSI↓ (both >50) = bearish divergence
+  - Invalid divergences (wrong RSI range, same direction)
+  - Edge cases (RSI=50 boundary, zero prices, extreme values)
+
+- **RSI Calculation (`TestCalculateRSIForCandles`, 5 tests):**
+  - Incremental RSI (None for first 14 candles, then calculated)
+  - Uptrend/downtrend scenarios
+  - Flat market behavior
+
+- **Database Fetching (`TestFetchCandlesForDivergence`, 4 tests):**
+  - Mock SessionLocal context manager (ORM mocking)
+  - Query filters (symbol, interval, ordered by open_time DESC, LIMIT)
+  - Empty result handling
+  - Database error handling
+
+- **Integration Tests (`TestDivergenceIntegration`, 2 tests):**
+  - Multiple consecutive pivots (independent per timeframe)
+  - Timeframe independence (4h, 1d, 1w diverge separately)
+
+- **Edge Cases (`TestDivergenceEdgeCases`, 6 tests):**
+  - RSI=50 boundary (dividing point between ALTA/BAIXA)
+  - Zero opening price (variation calc)
+  - Extreme RSI values (0, 100, negative)
+  - Large price swings
+  - Precision rounding
+
+**Mock Patterns:**
+- `@patch('src.storage.db.SessionLocal')` for database (NOT divergence.py)
+- Context manager mocking: `__enter__` returns mock session
+- `.query(Candle).filter(...).order_by(...).limit(...)` chain mocking
+
+**Coverage:** 100% of `divergence.py` module, all edge cases covered, database mocking prevents integration dependencies
 
 ## Adding New Tests
 
