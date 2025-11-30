@@ -1,8 +1,8 @@
 # SmartMoney Bot
 
-Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
+Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
 
-**Status:** v2.1.0 - Sprint 2 completo ✅ | Tier: FREE
+**Status:** v2.2.0 - Sprint 3 completo ✅ (Daily Summary implementado) | Tier: FREE
 
 ---
 
@@ -40,15 +40,17 @@ docker-compose up -d
 | **1** ✅ | Multi-TF | Mega-alert (🚨) quando 2+ TFs críticos simultaneamente |
 | **1** ✅ | Admin Channel | Logs de erro separados + stack traces |
 | **1** ✅ | Docker Ready | Resource limits (256MB RAM, 0.5 CPU), non-root user |
-| **2** ✅ | RSI Extremo | Níveis adicionais >85 (🔴🔴) / <15 (🟢🟢) |
+| **2** ✅ | RSI Extremo | Níveis adicionais >75 (🔴🔴) / <25 (🟢🟢) |
 | **2** ✅ | Anti-Spam | Recovery zones previnem alerts repetitivos na mesma condição |
 | **2** ✅ | DB Cleanup | APScheduler cronjob (daily 3AM UTC, 90-day retention, min 200 candles/TF) |
 | **2** ✅ | Healthcheck | HTTP endpoints `/health` e `/status` porta 8080 |
 | **2** ✅ | Deploy Auto | Script completo (`scripts/deploy.sh`) com UFW + Fail2Ban + systemd sandbox |
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
-| **3** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
-| **3** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
-| **3** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
+| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:00 BRT) + RSI 1D + variação diária** |
+| **3** ✅ | **Fear & Greed API** | **CoinMarketCap API com exponential backoff (2s-4s-8s)** |
+| **4** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
+| **4** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
+| **4** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
 
 ---
 
@@ -98,6 +100,12 @@ alerts:
     max_alerts_per_hour: 20
   circuit_breaker:
     max_alerts_per_minute: 5
+
+  # Daily Summary: Resumo Fear & Greed Index @ 21:00 BRT (00:00 UTC)
+  daily_summary:
+    enabled: true                    # Set false para desabilitar
+    send_time_brt: "21:00"          # HH:MM (BRT timezone)
+    send_window_minutes: 5          # Tolerância em minutos
 ```
 
 ---
@@ -161,11 +169,13 @@ kill -SIGTERM $(cat bot.pid)  # Graceful shutdown
 
 ### Logs
 ```bash
-tail -f logs/bot.log                    # Real-time
-grep "Alert sent" logs/bot.log          # Alertas enviados
-grep "ERROR" logs/bot.log               # Erros
-grep "Throttled" logs/bot.log           # Throttling ativo
-grep "RSI analysis" logs/bot.log        # Cálculos RSI
+tail -f logs/bot.log                        # Real-time
+grep "Alert sent" logs/bot.log              # Alertas enviados
+grep "Daily summary" logs/bot.log           # Resumo diário
+grep "Fear & Greed" logs/bot.log            # Fear & Greed API
+grep "ERROR" logs/bot.log                   # Erros
+grep "Throttled" logs/bot.log               # Throttling ativo
+grep "RSI analysis" logs/bot.log            # Cálculos RSI
 ```
 
 ### Database
@@ -192,7 +202,8 @@ src/
 ├── telegram_bot.py      # Wrapper Telegram API com retry logic
 ├── datafeeds/
 │   ├── binance_ws.py    # WebSocket client (auto-reconnect)
-│   └── binance_rest.py  # Backfill histórico (200 candles/TF)
+│   ├── binance_rest.py  # Backfill histórico (200 candles/TF)
+│   └── fear_greed.py    # Fear & Greed Index (CoinMarketCap API)
 ├── indicators/
 │   ├── rsi.py           # RSI (Wilder's smoothing)
 │   ├── breakouts.py     # Breakout detection
@@ -229,7 +240,7 @@ configs/
 - **Cálculo:** Wilder's smoothing, período 14
 - **Trigger:** Real-time (não aguarda fechamento)
 - **Normal:** >70 (🔴 overbought), <30 (🟢 oversold)
-- **Extremo:** >85 (🔴🔴), <15 (🟢🟢)
+- **Extremo:** >75 (🔴🔴), <25 (🟢🟢)
 - **TFs:** 1h, 4h, 1d
 
 ### Breakouts
@@ -254,6 +265,16 @@ configs/
 - **Per-candle:** Evita alerta duplicado na mesma candle
 - **Reforço:** Candles diferentes (1h apart) podem alertar novamente se condição persiste
 - **Cleanup automático:** Limpa entries de alertas com TTL 1h (a cada 60s)
+
+### Resumo Diário (Daily Summary)
+- **Horário:** 21:00 BRT (00:00 UTC próximo dia)
+- **Conteúdo:**
+  - 😱 Fear & Greed Index (0-100, CoinMarketCap API)
+  - 📊 RSI 1D com tendência (📈📉➡️)
+  - 💰 Variação diária em %
+- **Retry:** Exponential backoff se API falhar (2s → 4s → 8s)
+- **Janela:** ±5 minutos para envio (tolerância)
+- **Config:** Ativar/desativar em `free.yaml` → `alerts.daily_summary.enabled`
 
 ### Formatação
 - **Timezone:** America/Sao_Paulo (BRT, UTC-3)
@@ -294,6 +315,8 @@ configs/
 | ImportError | Dependencies faltando ou sem PYTHONPATH | `pip install -r requirements.txt`, usar `PYTHONPATH=. python ...` |
 | Bot crashes | Exceção no código | Verificar admin Telegram channel (❌ errors), `grep "ERROR" logs/bot.log` |
 | Healthcheck fail | Port 8080 não responde | `curl http://localhost:8080/health`, restart bot |
+| Daily Summary não aparece | Task desabilitado ou horário passou | Verificar: `grep "Daily summary" logs/bot.log`, check `free.yaml` → `alerts.daily_summary.enabled` |
+| Fear & Greed API falha | Network ou CoinMarketCap down | Normal: usa fallback "Indisponível", `grep "Fear & Greed" logs/bot.log` para logs de retry |
 | ModuleNotFoundError: No module named 'src' | PYTHONPATH não definido (Docker) | Adicionar `PYTHONPATH=/app` no docker-compose.yml environment |
 | unable to open database file | Filesystem read-only ou sem permissões | Remover `read_only: true` do docker-compose.yml, garantir `/data` volume com permissões 755 |
 | Bot não manda msg no Telegram | BOT_TOKEN inválido ou ausente em .env | Verificar: `cat .env \| grep BOT_TOKEN`, token deve vir exato do @BotFather, sem espaços |

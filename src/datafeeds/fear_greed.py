@@ -3,6 +3,7 @@
 import asyncio
 import aiohttp
 import json
+import os
 from typing import Optional, Tuple
 from src.utils.logging import logger
 
@@ -18,7 +19,7 @@ async def fetch_fear_greed_index() -> Tuple[Optional[int], str]:
 
     Implements exponential backoff retry: 2s, 4s, 8s (total 3 attempts)
     """
-    api_url = "https://api.coinmarketcap.com/v2/tools/fear-greed-index"
+    api_url = "https://pro-api.coinmarketcap.com/v3/fear-and-greed/latest"
 
     # Exponential backoff delays: 2s, 4s, 8s
     retry_delays = [2, 4, 8]
@@ -29,14 +30,17 @@ async def fetch_fear_greed_index() -> Tuple[Optional[int], str]:
                 async with session.get(
                     api_url,
                     timeout=aiohttp.ClientTimeout(total=10),
-                    headers={"User-Agent": "SmartMoney-Bot"}
+                    headers={
+                        "User-Agent": "tech.goldani@gmail.com",
+                        "X-CMC_PRO_API_KEY": os.getenv("COINMARKETCAP_API_KEY", "")
+                    }
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
 
-                        # Extract Fear & Greed value and label
-                        fgi_value = data.get("data", {}).get("fgi", None)
-                        fgi_label = data.get("data", {}).get("fgi_classification", "Indisponível")
+                        # Extract Fear & Greed value and label from API response
+                        fgi_value = data.get("data", {}).get("value", None)
+                        fgi_label = data.get("data", {}).get("value_classification", "Indisponível")
 
                         if fgi_value is not None:
                             logger.info(

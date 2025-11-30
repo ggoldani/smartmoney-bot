@@ -410,53 +410,50 @@ def template_daily_summary(
     symbol: str,
     fear_greed_value: int,
     fear_greed_label: str,
-    rsi_value: float,
-    rsi_previous: float,
-    price_current: float,
-    price_previous: float,
+    rsi_1d: float,
+    rsi_1w: float,
+    rsi_1m: float,
+    price_open: float,
+    price_close: float,
     fear_emoji: str = "❓"
 ) -> str:
     """
-    Template for daily summary alert (21:00 BRT / 00:00 UTC).
+    Template for daily summary alert (21:01 BRT / 00:01 UTC).
 
     Args:
         symbol: Trading pair (e.g., "BTCUSDT")
         fear_greed_value: Fear & Greed Index value (0-100)
-        fear_greed_label: Description from API (e.g., "Extreme Greed")
-        rsi_value: Current 1D RSI value
-        rsi_previous: Previous day RSI value
-        price_current: Current closing price
-        price_previous: Previous day closing price
+        fear_greed_label: Sentiment from API
+        rsi_1d: Daily RSI value
+        rsi_1w: Weekly RSI value
+        rsi_1m: Monthly RSI value
+        price_open: Candle open price (previous day)
+        price_close: Candle close price (previous day)
         fear_emoji: Emoji representing sentiment
     """
     symbol_display = format_symbol_display(symbol)
     timestamp = format_datetime_br()
 
+    # Format RSI values with ALTA/BAIXA trend
+    rsi_1d_fmt = format_rsi_value(rsi_1d)
+    rsi_1d_trend = "📈 ALTA" if rsi_1d > 50 else "📉 BAIXA"
+
+    rsi_1w_fmt = format_rsi_value(rsi_1w)
+    rsi_1w_trend = "📈 ALTA" if rsi_1w > 50 else "📉 BAIXA"
+
+    rsi_1m_fmt = format_rsi_value(rsi_1m)
+    rsi_1m_trend = "📈 ALTA" if rsi_1m > 50 else "📉 BAIXA"
+
     # Calculate daily variation
-    if price_previous > 0:
-        variation_pct = ((price_current - price_previous) / price_previous) * 100
+    if price_open > 0:
+        variation_pct = ((price_close - price_open) / price_open) * 100
     else:
         variation_pct = 0
 
     variation_sign = "+" if variation_pct >= 0 else ""
     variation_formatted = format_percentage_br(abs(variation_pct))
-
-    # Format prices
-    price_current_formatted = format_price_br(price_current)
-    price_previous_formatted = format_price_br(price_previous)
-
-    # Format RSI values
-    rsi_current_formatted = format_rsi_value(rsi_value)
-    rsi_previous_formatted = format_rsi_value(rsi_previous)
-
-    # Calculate RSI trend
-    rsi_change = rsi_value - rsi_previous
-    if rsi_change > 2:
-        rsi_trend_emoji = "📈"
-    elif rsi_change < -2:
-        rsi_trend_emoji = "📉"
-    else:
-        rsi_trend_emoji = "➡️"
+    price_open_formatted = format_price_br(price_open)
+    price_close_formatted = format_price_br(price_close)
 
     return f"""🌙 RESUMO DIÁRIO - {symbol_display} 📊
 
@@ -465,13 +462,14 @@ def template_daily_summary(
 {fear_emoji} Fear & Greed Index
 └─ {fear_greed_value}/100 - {fear_greed_label}
 
-📊 RSI (1 dia)
-└─ {rsi_current_formatted} {rsi_trend_emoji}
-   (Anterior: {rsi_previous_formatted})
+📊 RSI (Múltiplos Timeframes)
+├─ 1D: {rsi_1d_fmt} {rsi_1d_trend}
+├─ 1W: {rsi_1w_fmt} {rsi_1w_trend}
+└─ 1M: {rsi_1m_fmt} {rsi_1m_trend}
 
 💰 Variação do Dia
 └─ {variation_sign}{variation_formatted}
-   De: {price_previous_formatted}
-   Para: {price_current_formatted}
+   Abertura: {price_open_formatted}
+   Fechamento: {price_close_formatted}
 
 {ALERT_DISCLAIMER}"""

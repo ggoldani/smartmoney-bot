@@ -54,6 +54,7 @@ tests/
 ├── test_formatter.py        # Brazilian formatting tests
 ├── test_config.py           # Configuration loading & validation tests
 ├── test_throttle.py         # Rate limiting & circuit breaker tests
+├── test_daily_summary.py    # Fear & Greed Index & daily summary tests
 └── README.md                # This file
 ```
 
@@ -110,6 +111,43 @@ tests/
   - Recovery after throttle
   - Edge cases (zero/negative limits, Unicode keys)
 
+### `test_daily_summary.py` (27 tests)
+- **Fear & Greed API (`TestFearGreedAPI`, 5 tests):**
+  - API return type validation (tuple: value + label)
+  - HTTP error handling (5xx server errors)
+  - Timeout handling (graceful fallback)
+  - Sentiment mapping (emoji + Portuguese labels)
+  - None value handling
+
+- **Daily Summary Template (`TestDailySummaryTemplate`, 8 tests):**
+  - Message structure validation (headers, sections)
+  - Fear & Greed Index formatting (value/100 + label)
+  - RSI value formatting (Brazilian locale: `72,50`)
+  - Price variation calculation (+/-%)
+  - RSI trend detection (📈📉➡️ emojis)
+  - Timestamp formatting (BRT timezone)
+  - Disclaimer inclusion
+
+- **Configuration (`TestDailySummaryConfig`, 4 tests):**
+  - Default values (enabled, send_time_brt, send_window_minutes)
+  - Safe fallbacks when config missing
+  - Time format validation (HH:MM)
+  - Window minutes validation (positive)
+
+- **Scheduling & Timing (`TestDailySummaryTiming`, 4 tests):**
+  - HH:MM format parsing
+  - Invalid time value handling
+  - BRT timezone conversion (UTC-3/-2 offset)
+  - Next send time calculation
+
+- **Edge Cases (`TestDailySummaryEdgeCases`, 6 tests):**
+  - Zero previous price handling
+  - Unicode symbol handling
+  - All sentiment emoji rendering
+  - Extreme values (high/low FGI)
+  - Empty/None field handling
+  - Brazilian number formatting edge cases
+
 ## Example Test Run
 
 ```bash
@@ -161,18 +199,24 @@ Or use in CI/CD pipeline.
 - **Formatter:** 95%+ (all functions covered)
 - **Config:** 85%+ (validation logic tested)
 - **Throttle:** 95%+ (all scenarios covered)
+- **Daily Summary:** 90%+ (API, templates, scheduling, edge cases)
 
 **Overall target:** 65-70% codebase coverage (focus on critical logic, skip async orchestration)
+
+**Total tests:** ~157 (35 indicators + 40 formatter + 25 config + 30 throttle + 27 daily summary)
 
 ## What's NOT Tested
 
 Intentionally skipped (complex async/integration):
 - WebSocket connection (`binance_ws.py`)
 - Telegram API calls (`telegram_bot.py`)
-- Alert engine state management (`rules/engine.py`)
+- Alert engine async task scheduling (`rules/engine.py` - `_send_daily_summary()` task loop)
 - Database ORM queries (`storage/repo.py`)
+- Real CoinMarketCap API calls (mocked in unit tests)
 
 These require integration tests or manual testing with mocked external services.
+
+**Note:** Daily Summary *template formatting, configuration validation, and timing logic* are fully unit tested. Only the async task loop in `AlertEngine._send_daily_summary()` requires integration testing.
 
 ## Adding New Tests
 

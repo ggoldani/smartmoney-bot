@@ -226,3 +226,8 @@ if not BOT_TOKEN:
 if not CHANNEL_CHAT_ID:
     import sys
     print("WARNING: CHANNEL_CHAT_ID not set - alerts will be logged only")
+
+# Validate Fear & Greed API key
+COINMARKETCAP_API_KEY = os.getenv("COINMARKETCAP_API_KEY", "").strip()
+if not COINMARKETCAP_API_KEY:
+    print("WARNING: COINMARKETCAP_API_KEY not set - Fear & Greed Index will show 'Indisponível'")

@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 from sqlalchemy.dialects.sqlite import insert
 from .db import SessionLocal
 from .models import Candle
@@ -37,4 +37,10 @@ def save_candle_event(event: Dict) -> bool:
         session.execute(stmt)
         session.commit()
         return True
+
+
+def get_previous_closed_candle(symbol: str, interval: str) -> Optional[Candle]:
+    """Get most recent closed candle (day that just closed)."""
+    with SessionLocal() as session:
+        return session.query(Candle).filter_by(symbol=symbol, interval=interval).order_by(Candle.open_time.desc()).first()
 

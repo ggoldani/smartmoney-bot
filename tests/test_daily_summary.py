@@ -101,10 +101,11 @@ class TestDailySummaryTemplate:
             symbol="BTCUSDT",
             fear_greed_value=75,
             fear_greed_label="Ganância",
-            rsi_value=72.5,
-            rsi_previous=68.0,
-            price_current=67420.50,
-            price_previous=66000.00,
+            rsi_1d=72.5,
+            rsi_1w=65.0,
+            rsi_1m=58.5,
+            price_open=66000.00,
+            price_close=67420.50,
             fear_emoji="😊"
         )
 
@@ -113,9 +114,81 @@ class TestDailySummaryTemplate:
         assert "Fear & Greed Index" in message
         assert "75/100" in message
         assert "Ganância" in message
-        assert "RSI (1 dia)" in message
-        assert "72,50" in message  # Brazilian format
-        assert "📈" in message  # Trend emoji (RSI increased)
+        assert "RSI (Múltiplos Timeframes)" in message
+        assert "72,50" in message  # Brazilian format for 1D RSI
+
+    def test_template_rsi_multiple_timeframes(self):
+        """Should display RSI for 1D, 1W, and 1M."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=72.5,
+            rsi_1w=65.0,
+            rsi_1m=58.5,
+            price_open=66000.00,
+            price_close=67000.00,
+            fear_emoji="😐"
+        )
+
+        # Check all timeframes are present
+        assert "1D:" in message
+        assert "1W:" in message
+        assert "1M:" in message
+        # Check values are formatted (Brazilian format with comma)
+        assert "72,50" in message  # 1D
+        assert "65,00" in message  # 1W
+        assert "58,50" in message  # 1M
+
+    def test_template_rsi_trend_alta_1d(self):
+        """Should show 'ALTA' emoji when RSI > 50."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=60,
+            fear_greed_label="Ganância",
+            rsi_1d=72.5,  # > 50 = ALTA
+            rsi_1w=65.0,
+            rsi_1m=58.5,
+            price_open=67000.00,
+            price_close=67000.00,
+            fear_emoji="😊"
+        )
+
+        assert "1D: 72,50 📈 ALTA" in message
+
+    def test_template_rsi_trend_baixa_1d(self):
+        """Should show 'BAIXA' emoji when RSI < 50."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=40,
+            fear_greed_label="Medo",
+            rsi_1d=35.0,  # < 50 = BAIXA
+            rsi_1w=45.0,
+            rsi_1m=42.5,
+            price_open=67000.00,
+            price_close=66000.00,
+            fear_emoji="😨"
+        )
+
+        assert "1D: 35,00 📉 BAIXA" in message
+
+    def test_template_rsi_trend_mixed(self):
+        """Should show different trends for different timeframes."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=75.0,   # > 50 = ALTA
+            rsi_1w=35.0,   # < 50 = BAIXA
+            rsi_1m=52.0,   # > 50 = ALTA
+            price_open=66000.00,
+            price_close=67000.00,
+            fear_emoji="😐"
+        )
+
+        assert "1D: 75,00 📈 ALTA" in message
+        assert "1W: 35,00 📉 BAIXA" in message
+        assert "1M: 52,00 📈 ALTA" in message
 
     def test_template_price_variation_positive(self):
         """Should show positive variation correctly."""
@@ -123,17 +196,19 @@ class TestDailySummaryTemplate:
             symbol="BTCUSDT",
             fear_greed_value=50,
             fear_greed_label="Neutro",
-            rsi_value=50.0,
-            rsi_previous=50.0,
-            price_current=68000.00,
-            price_previous=65000.00,
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=65000.00,
+            price_close=68000.00,
             fear_emoji="😐"
         )
 
-        # Check for approximate positive variation (4.6%)
+        # Check for positive variation (4.62%)
         assert "+" in message
         assert "Variação do Dia" in message
-        assert "De:" in message or "De :" in message
+        assert "Abertura: $65.000,00" in message
+        assert "Fechamento: $68.000,00" in message
 
     def test_template_price_variation_negative(self):
         """Should show negative variation correctly."""
@@ -141,61 +216,34 @@ class TestDailySummaryTemplate:
             symbol="BTCUSDT",
             fear_greed_value=30,
             fear_greed_label="Medo",
-            rsi_value=35.0,
-            rsi_previous=50.0,
-            price_current=63000.00,
-            price_previous=65000.00,
+            rsi_1d=35.0,
+            rsi_1w=40.0,
+            rsi_1m=42.0,
+            price_open=67000.00,
+            price_close=63000.00,
             fear_emoji="😨"
         )
 
-        # Check for negative variation (3.07%)
+        # Check for negative variation (-5.97%)
         assert "Variação do Dia" in message
-        assert "De:" in message or "De :" in message
+        assert "Abertura: $67.000,00" in message
+        assert "Fechamento: $63.000,00" in message
 
-    def test_template_rsi_trend_uptrend(self):
-        """Should show uptrend emoji when RSI increases significantly."""
-        message = template_daily_summary(
-            symbol="BTCUSDT",
-            fear_greed_value=60,
-            fear_greed_label="Ganância",
-            rsi_value=75.0,
-            rsi_previous=60.0,  # +15 change
-            price_current=67000.00,
-            price_previous=67000.00,
-            fear_emoji="😊"
-        )
-
-        assert "📈" in message
-
-    def test_template_rsi_trend_downtrend(self):
-        """Should show downtrend emoji when RSI decreases significantly."""
-        message = template_daily_summary(
-            symbol="BTCUSDT",
-            fear_greed_value=40,
-            fear_greed_label="Medo",
-            rsi_value=25.0,
-            rsi_previous=40.0,  # -15 change
-            price_current=66000.00,
-            price_previous=66000.00,
-            fear_emoji="😨"
-        )
-
-        assert "📉" in message
-
-    def test_template_rsi_trend_neutral(self):
-        """Should show neutral arrow when RSI change < 2."""
+    def test_template_price_variation_zero(self):
+        """Should show zero variation when prices are equal."""
         message = template_daily_summary(
             symbol="BTCUSDT",
             fear_greed_value=50,
             fear_greed_label="Neutro",
-            rsi_value=50.5,
-            rsi_previous=50.0,  # +0.5 change
-            price_current=67000.00,
-            price_previous=67000.00,
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67000.00,
             fear_emoji="😐"
         )
 
-        assert "➡️" in message
+        assert "+0,00%" in message or "0,00%" in message
 
     def test_template_disclaimer_included(self):
         """Should include disclaimer in message."""
@@ -203,10 +251,11 @@ class TestDailySummaryTemplate:
             symbol="BTCUSDT",
             fear_greed_value=50,
             fear_greed_label="Neutro",
-            rsi_value=50.0,
-            rsi_previous=50.0,
-            price_current=67000.00,
-            price_previous=67000.00
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67000.00
         )
 
         assert "⚠️ IMPORTANTE" in message
@@ -301,21 +350,22 @@ class TestDailySummaryTiming:
 class TestDailySummaryEdgeCases:
     """Edge cases and boundary conditions."""
 
-    def test_price_previous_zero(self):
-        """Should handle zero previous price."""
+    def test_price_open_zero(self):
+        """Should handle zero open price (no variation calculated)."""
         message = template_daily_summary(
             symbol="BTCUSDT",
             fear_greed_value=50,
             fear_greed_label="Neutro",
-            rsi_value=50.0,
-            rsi_previous=50.0,
-            price_current=67000.00,
-            price_previous=0,  # Zero previous price
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=0,  # Zero open price
+            price_close=67000.00,
             fear_emoji="😐"
         )
 
         assert "RESUMO DIÁRIO" in message
-        assert "0,00%" in message  # Variation should be 0
+        assert "0,00%" in message  # Variation should be 0 when open is 0
 
     def test_unicode_symbol(self):
         """Should handle symbols with unicode."""
@@ -323,10 +373,11 @@ class TestDailySummaryEdgeCases:
             symbol="BTCUSDT",
             fear_greed_value=50,
             fear_greed_label="Neutro",
-            rsi_value=50.0,
-            rsi_previous=50.0,
-            price_current=67000.00,
-            price_previous=67000.00,
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67000.00,
             fear_emoji="😐"
         )
 
@@ -342,3 +393,74 @@ class TestDailySummaryEdgeCases:
             emoji, sentiment = get_fear_greed_sentiment(fgi_value)
             assert emoji in emojis or emoji == "❓"
             assert sentiment != ""
+
+    def test_rsi_boundary_50(self):
+        """Should correctly classify RSI at boundary value 50."""
+        # At exactly 50, should be ALTA (>50 is true, =50 is false)
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=50.0,  # Exactly 50
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67000.00,
+            fear_emoji="😐"
+        )
+
+        # At 50 exactly, > 50 is False, so should be BAIXA
+        assert "📉 BAIXA" in message
+
+    def test_rsi_boundary_50_plus_1(self):
+        """Should correctly classify RSI just above 50."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=50.1,  # Just above 50
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67000.00,
+            fear_emoji="😐"
+        )
+
+        # At 50.1, > 50 is True, so should be ALTA
+        assert "50,10 📈 ALTA" in message
+
+    def test_large_price_values(self):
+        """Should handle large price values correctly."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=100000.00,
+            price_close=105000.00,
+            fear_emoji="😐"
+        )
+
+        assert "$100.000,00" in message
+        assert "$105.000,00" in message
+        assert "5,00%" in message
+
+    def test_very_small_price_variation(self):
+        """Should format very small price variations."""
+        message = template_daily_summary(
+            symbol="BTCUSDT",
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            rsi_1d=50.0,
+            rsi_1w=50.0,
+            rsi_1m=50.0,
+            price_open=67000.00,
+            price_close=67001.00,
+            fear_emoji="😐"
+        )
+
+        assert "Variação do Dia" in message
+        # Variation is (67001-67000)/67000 = 0.0149% ≈ 0.01%
+        assert "+" in message

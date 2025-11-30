@@ -763,34 +763,37 @@ class AlertEngine:
                     fgi_value, fgi_label = await fetch_fear_greed_index()
                     fgi_emoji, fgi_sentiment = get_fear_greed_sentiment(fgi_value)
 
-                    # Get RSI 1D for BTCUSDT
+                    # Get RSI 1D, 1W, 1M for BTCUSDT
                     symbol = "BTCUSDT"
-                    interval = "1d"
                     period = self.rsi_config.get('period', 14)
                     overbought = self.rsi_config.get('overbought', 70)
                     oversold = self.rsi_config.get('oversold', 30)
 
-                    rsi_result = analyze_rsi(symbol, interval, overbought, oversold, period)
-                    rsi_current = rsi_result.get('rsi', 0) if rsi_result else 0
+                    rsi_1d_result = analyze_rsi(symbol, "1d", overbought, oversold, period)
+                    rsi_1d = rsi_1d_result.get('rsi', 0) if rsi_1d_result else 0
 
-                    # Get previous day price
-                    candle_key = f"{symbol}_{interval}"
-                    candle_data = self.last_candle.get(candle_key, {})
-                    price_current = candle_data.get('close', 0)
-                    price_previous = price_current  # TODO: fetch from DB if needed
+                    rsi_1w_result = analyze_rsi(symbol, "1w", overbought, oversold, period)
+                    rsi_1w = rsi_1w_result.get('rsi', 0) if rsi_1w_result else 0
 
-                    # Use RSI from previous day (fallback to current if not available)
-                    rsi_previous = rsi_current
+                    rsi_1m_result = analyze_rsi(symbol, "1M", overbought, oversold, period)
+                    rsi_1m = rsi_1m_result.get('rsi', 0) if rsi_1m_result else 0
+
+                    # Get previous day closed candle (open/close prices)
+                    from src.storage.repo import get_previous_closed_candle
+                    closed_candle = get_previous_closed_candle(symbol, "1d")
+                    price_open = closed_candle.open if closed_candle else 0
+                    price_close = closed_candle.close if closed_candle else 0
 
                     # Generate and send message
                     message = template_daily_summary(
                         symbol=symbol,
                         fear_greed_value=fgi_value if fgi_value else 0,
                         fear_greed_label=fgi_sentiment,
-                        rsi_value=rsi_current,
-                        rsi_previous=rsi_previous,
-                        price_current=price_current,
-                        price_previous=price_previous,
+                        rsi_1d=rsi_1d,
+                        rsi_1w=rsi_1w,
+                        rsi_1m=rsi_1m,
+                        price_open=price_open,
+                        price_close=price_close,
                         fear_emoji=fgi_emoji
                     )
 
