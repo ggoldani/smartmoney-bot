@@ -111,25 +111,27 @@ tests/
   - Recovery after throttle
   - Edge cases (zero/negative limits, Unicode keys)
 
-### `test_daily_summary.py` (27 tests)
-- **Fear & Greed API (`TestFearGreedAPI`, 5 tests):**
+### `test_daily_summary.py` (33 tests) ✅
+- **Fear & Greed API (`TestFearGreedAPI`, 9 tests):**
   - API return type validation (tuple: value + label)
   - HTTP error handling (5xx server errors)
   - Timeout handling (graceful fallback)
-  - Sentiment mapping (emoji + Portuguese labels)
+  - Sentiment mapping (emoji + Portuguese labels): Ganância Extrema, Ganância, Neutro, Medo, Medo Extremo
   - None value handling
 
-- **Daily Summary Template (`TestDailySummaryTemplate`, 8 tests):**
-  - Message structure validation (headers, sections)
-  - Fear & Greed Index formatting (value/100 + label)
-  - RSI value formatting (Brazilian locale: `72,50`)
-  - Price variation calculation (+/-%)
-  - RSI trend detection (📈📉➡️ emojis)
+- **Daily Summary Template (`TestDailySummaryTemplate`, 9 tests):**
+  - Message structure validation (headers, sections, "RESUMO DIÁRIO", "Fear & Greed Index", "RSI (Múltiplos Timeframes)")
+  - Multiple timeframes display (1D, 1W, 1M with values)
+  - **RSI trend detection (ALTA for >50, BAIXA for <50) with emojis (📈📉)**
+  - **Mixed trends across timeframes** (1D ALTA, 1W BAIXA, 1M ALTA)
+  - Price variation calculation (open/close, not previous day)
+  - Positive/negative variation (+/-%)
+  - Zero variation handling (same open/close price)
   - Timestamp formatting (BRT timezone)
   - Disclaimer inclusion
 
 - **Configuration (`TestDailySummaryConfig`, 4 tests):**
-  - Default values (enabled, send_time_brt, send_window_minutes)
+  - Default values (enabled, send_time_brt: "21:01", send_window_minutes: 1)
   - Safe fallbacks when config missing
   - Time format validation (HH:MM)
   - Window minutes validation (positive)
@@ -140,13 +142,13 @@ tests/
   - BRT timezone conversion (UTC-3/-2 offset)
   - Next send time calculation
 
-- **Edge Cases (`TestDailySummaryEdgeCases`, 6 tests):**
-  - Zero previous price handling
-  - Unicode symbol handling
-  - All sentiment emoji rendering
-  - Extreme values (high/low FGI)
-  - Empty/None field handling
-  - Brazilian number formatting edge cases
+- **Edge Cases (`TestDailySummaryEdgeCases`, 7 tests):**
+  - **Zero open price handling** (variation = 0)
+  - Unicode symbol handling (BTC/USDT)
+  - All sentiment emoji rendering (🤑😊😐😨😱❓)
+  - **RSI boundary at 50 (=50 is BAIXA, >50.1 is ALTA)**
+  - **Large price values** ($100.000,00 formatting)
+  - **Very small price variations** (fractions of percent)
 
 ## Example Test Run
 
@@ -203,20 +205,20 @@ Or use in CI/CD pipeline.
 
 **Overall target:** 65-70% codebase coverage (focus on critical logic, skip async orchestration)
 
-**Total tests:** ~157 (35 indicators + 40 formatter + 25 config + 30 throttle + 27 daily summary)
+**Total tests:** **163** (35 indicators + 40 formatter + 25 config + 30 throttle + **33 daily summary**) ✅
 
 ## What's NOT Tested
 
 Intentionally skipped (complex async/integration):
 - WebSocket connection (`binance_ws.py`)
 - Telegram API calls (`telegram_bot.py`)
-- Alert engine async task scheduling (`rules/engine.py` - `_send_daily_summary()` task loop)
-- Database ORM queries (`storage/repo.py`)
-- Real CoinMarketCap API calls (mocked in unit tests)
+- Alert engine async task scheduling (`rules/engine.py` - `_send_daily_summary()` task loop integration with asyncio)
+- Database ORM queries (`storage/repo.py` - `get_previous_closed_candle()` actual DB queries)
+- Real CoinMarketCap API calls (mocked in unit tests via aiohttp mocks)
 
 These require integration tests or manual testing with mocked external services.
 
-**Note:** Daily Summary *template formatting, configuration validation, and timing logic* are fully unit tested. Only the async task loop in `AlertEngine._send_daily_summary()` requires integration testing.
+**Note:** Daily Summary *template formatting (RSI 1D/1W/1M ALTA/BAIXA, Fear & Greed emoji, price variation), configuration validation (send_time_brt: "21:01", window_minutes: 1), timing logic (21:01 BRT scheduling), and Fear & Greed sentiment mapping* are **fully unit tested (33 tests)**. Only the async task loop and actual database queries in `AlertEngine._send_daily_summary()` require integration testing.
 
 ## Adding New Tests
 

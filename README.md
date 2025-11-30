@@ -13,7 +13,7 @@ Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's
 git clone <repo-url> && cd smartmoney-bot
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env && nano .env  # BOT_TOKEN, CHANNEL_CHAT_ID, ADMIN_CHANNEL_ID
+cp .env.example .env && nano .env  # BOT_TOKEN, CHANNEL_CHAT_ID, ADMIN_CHANNEL_ID, COINMARKETCAP_API_KEY
 PYTHONPATH=. python src/main.py --dry-run  # Teste sem Telegram
 PYTHONPATH=. python src/main.py             # LIVE
 ```
@@ -46,8 +46,8 @@ docker-compose up -d
 | **2** ✅ | Healthcheck | HTTP endpoints `/health` e `/status` porta 8080 |
 | **2** ✅ | Deploy Auto | Script completo (`scripts/deploy.sh`) com UFW + Fail2Ban + systemd sandbox |
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
-| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:00 BRT) + RSI 1D + variação diária** |
-| **3** ✅ | **Fear & Greed API** | **CoinMarketCap API com exponential backoff (2s-4s-8s)** |
+| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:01 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior** |
+| **3** ✅ | **Fear & Greed API** | **CoinMarketCap API v3 (`value`/`value_classification`) + exponential backoff (2s-4s-8s)** |
 | **4** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
 | **4** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
 | **4** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
@@ -63,6 +63,7 @@ docker-compose up -d
 | `BOT_TOKEN` | `123456:ABC...` | ✅ | Token do bot (@BotFather) |
 | `CHANNEL_CHAT_ID` | `-1001234567890` | ✅ | ID do grupo (deve começar com `-100` para supergrupos) |
 | `ADMIN_CHANNEL_ID` | `-1009876543210` | ✅ | ID do grupo admin (erros/warnings) |
+| `COINMARKETCAP_API_KEY` | `abc-123-def...` | ✅ | API key CoinMarketCap (Fear & Greed Index) |
 | `CONFIG_FILE` | `./configs/free.yaml` | ✅ | Path da config (free ou premium) |
 | `DB_URL` | `sqlite:///./data.db` | ✅ | Database URL |
 | `LOG_LEVEL` | `INFO` ou `DEBUG` | ❌ | Default: INFO (DEBUG muito verbose) |
@@ -101,11 +102,11 @@ alerts:
   circuit_breaker:
     max_alerts_per_minute: 5
 
-  # Daily Summary: Resumo Fear & Greed Index @ 21:00 BRT (00:00 UTC)
+  # Daily Summary: Resumo Fear & Greed Index @ 21:01 BRT (00:01 UTC)
   daily_summary:
     enabled: true                    # Set false para desabilitar
-    send_time_brt: "21:00"          # HH:MM (BRT timezone)
-    send_window_minutes: 5          # Tolerância em minutos
+    send_time_brt: "21:01"          # HH:MM (BRT timezone, 1min após candle fechar)
+    send_window_minutes: 1          # Tolerância em minutos (±1min)
 ```
 
 ---
@@ -169,13 +170,14 @@ kill -SIGTERM $(cat bot.pid)  # Graceful shutdown
 
 ### Logs
 ```bash
-tail -f logs/bot.log                        # Real-time
-grep "Alert sent" logs/bot.log              # Alertas enviados
-grep "Daily summary" logs/bot.log           # Resumo diário
-grep "Fear & Greed" logs/bot.log            # Fear & Greed API
-grep "ERROR" logs/bot.log                   # Erros
-grep "Throttled" logs/bot.log               # Throttling ativo
-grep "RSI analysis" logs/bot.log            # Cálculos RSI
+tail -f logs/bot.log                                # Real-time
+grep "Alert sent" logs/bot.log                      # Alertas enviados
+grep "Daily summary" logs/bot.log                   # Resumo diário (task execution)
+grep "Fear & Greed" logs/bot.log                    # Fear & Greed API calls/retries
+grep "Fear & Greed Index fetched" logs/bot.log      # Fear & Greed valor recebido
+grep "ERROR" logs/bot.log                           # Erros
+grep "Throttled" logs/bot.log                       # Throttling ativo
+grep "RSI analysis" logs/bot.log                    # Cálculos RSI
 ```
 
 ### Database
@@ -203,13 +205,13 @@ src/
 ├── datafeeds/
 │   ├── binance_ws.py    # WebSocket client (auto-reconnect)
 │   ├── binance_rest.py  # Backfill histórico (200 candles/TF)
-│   └── fear_greed.py    # Fear & Greed Index (CoinMarketCap API)
+│   └── fear_greed.py    # Fear & Greed Index (CoinMarketCap API v3: value/value_classification)
 ├── indicators/
 │   ├── rsi.py           # RSI (Wilder's smoothing)
 │   ├── breakouts.py     # Breakout detection
 │   └── [ma.py, sr_levels.py]  # Stubs para futuro
 ├── rules/
-│   ├── engine.py        # Alert loop (check every 5s)
+│   ├── engine.py        # Alert loop (check every 5s) + _send_daily_summary() task (21:01 BRT)
 │   └── rule_defs.py     # Rule definitions + recovery zones
 ├── notif/
 │   ├── formatter.py     # Brazilian formatting (BRT, números)
@@ -230,7 +232,9 @@ configs/
 └── free.yaml            # Configuration (also: premium.yaml future)
 ```
 
-**Data Flow:** Binance WS → Candles → SQLite → Alert Engine (5s loop) → Indicators → Rules → Throttle → Telegram
+**Data Flow:**
+- **Real-time Alerts:** Binance WS → Candles → SQLite → Alert Engine (5s loop) → Indicators → Rules → Throttle → Telegram
+- **Daily Summary:** Scheduled task (21:01 BRT) → Fetch Fear & Greed API → Get RSI 1D/1W/1M + previous day candle → Format → Telegram
 
 ---
 
@@ -267,14 +271,18 @@ configs/
 - **Cleanup automático:** Limpa entries de alertas com TTL 1h (a cada 60s)
 
 ### Resumo Diário (Daily Summary)
-- **Horário:** 21:00 BRT (00:00 UTC próximo dia)
+- **Horário:** 21:01 BRT (00:01 UTC próximo dia) - 1min após candle fechar
 - **Conteúdo:**
-  - 😱 Fear & Greed Index (0-100, CoinMarketCap API)
-  - 📊 RSI 1D com tendência (📈📉➡️)
-  - 💰 Variação diária em %
+  - 😱 Fear & Greed Index (0-100, CoinMarketCap API v3 - `value`/`value_classification`)
+  - 📊 RSI múltiplos timeframes:
+    - 1D: `RSI > 50 → 📈 ALTA`, `RSI < 50 → 📉 BAIXA`
+    - 1W: mesmo padrão
+    - 1M: mesmo padrão
+  - 💰 Variação diária: `(candle_anterior.close - candle_anterior.open) / candle_anterior.open × 100%`
 - **Retry:** Exponential backoff se API falhar (2s → 4s → 8s)
-- **Janela:** ±5 minutos para envio (tolerância)
+- **Janela:** ±1 minuto para envio (tolerância)
 - **Config:** Ativar/desativar em `free.yaml` → `alerts.daily_summary.enabled`
+- **API Key:** Obrigatório `COINMARKETCAP_API_KEY` em `.env`
 
 ### Formatação
 - **Timezone:** America/Sao_Paulo (BRT, UTC-3)
@@ -315,8 +323,9 @@ configs/
 | ImportError | Dependencies faltando ou sem PYTHONPATH | `pip install -r requirements.txt`, usar `PYTHONPATH=. python ...` |
 | Bot crashes | Exceção no código | Verificar admin Telegram channel (❌ errors), `grep "ERROR" logs/bot.log` |
 | Healthcheck fail | Port 8080 não responde | `curl http://localhost:8080/health`, restart bot |
-| Daily Summary não aparece | Task desabilitado ou horário passou | Verificar: `grep "Daily summary" logs/bot.log`, check `free.yaml` → `alerts.daily_summary.enabled` |
-| Fear & Greed API falha | Network ou CoinMarketCap down | Normal: usa fallback "Indisponível", `grep "Fear & Greed" logs/bot.log` para logs de retry |
+| **Daily Summary não aparece** | **Task desabilitado, horário passou, ou API key inválida** | **Verificar: `grep "Daily summary" logs/bot.log` + `free.yaml` → `enabled: true` + `COINMARKETCAP_API_KEY` em `.env`** |
+| **Fear & Greed mostra "Indisponível"** | **API key ausente/inválida ou CoinMarketCap down** | **Verificar: `COINMARKETCAP_API_KEY` em `.env`, `grep "Fear & Greed" logs/bot.log` para retry attempts** |
+| **RSI não mostra no Daily Summary** | Dados insuficientes ou candle anterior não existe | Esperar 1-2 dias para dados acumularem, verificar `grep "RSI analysis" logs/bot.log` |
 | ModuleNotFoundError: No module named 'src' | PYTHONPATH não definido (Docker) | Adicionar `PYTHONPATH=/app` no docker-compose.yml environment |
 | unable to open database file | Filesystem read-only ou sem permissões | Remover `read_only: true` do docker-compose.yml, garantir `/data` volume com permissões 755 |
 | Bot não manda msg no Telegram | BOT_TOKEN inválido ou ausente em .env | Verificar: `cat .env \| grep BOT_TOKEN`, token deve vir exato do @BotFather, sem espaços |
