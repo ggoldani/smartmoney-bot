@@ -256,6 +256,13 @@ configs/
 - **Normal:** >70 (🔴 overbought), <30 (🟢 oversold)
 - **Extremo:** >75 (🔴🔴), <25 (🟢🟢)
 - **TFs:** 1h, 4h, 1d
+- **Escalação & Bloqueio:**
+  - ✅ Permite: OVERSOLD → EXTREME_OVERSOLD (escalação de severidade)
+  - ✅ Permite: OVERBOUGHT → EXTREME_OVERBOUGHT (escalação de severidade)
+  - ❌ Bloqueia: EXTREME → OVERSOLD/OVERBOUGHT (redução de severidade)
+  - ❌ Bloqueia: EXTREME → EXTREME (mesmo nível)
+  - ✅ Reset: Apenas quando RSI entra na recovery zone (35 < RSI < 65)
+  - **Comportamento:** Uma vez em OVERSOLD/OVERBOUGHT, não há novo alerta até voltar à recovery zone (impede re-alertas)
 
 ### Breakouts
 - **Detecção:** Real-time (não aguarda fechamento)
@@ -288,9 +295,11 @@ configs/
 ### Throttling & Anti-spam
 - **Global limit:** 20 alertas/hora (configurável)
 - **Recovery zones:** RSI neutral (35-65, configurável) reseta permissão de novo alerta
-- **Per-candle:** Evita alerta duplicado na mesma candle
-- **Reforço:** Candles diferentes (1h apart) podem alertar novamente se condição persiste
+- **Per-candle:** Evita alerta duplicado na mesma candle (marked immediately on collect, not on send)
+- **Severity-based:** RSI allows escalation (OVERSOLD→EXTREME) but blocks reduction (EXTREME→OVERSOLD)
+- **Reforço:** Candles diferentes podem alertar novamente APENAS após voltar à recovery zone (RSI) ou novo candle (Breakout)
 - **Cleanup automático:** Limpa entries de alertas com TTL 1h (a cada 60s)
+- **Implementação:** `last_condition` marcado em `_collect_single_alert()` (não espera envio) + `_get_rsi_severity()` para comparação
 
 ### Resumo Diário (Daily Summary)
 - **Horário:** 21:01 BRT (00:01 UTC próximo dia) - 1min após candle fechar
@@ -328,6 +337,21 @@ configs/
 | PyYAML | 6.0.1 | Config files |
 | pytz | 2024.1 | Timezone handling |
 | aiohttp | 3.10.0 | HTTP async client |
+
+---
+
+## 🔧 Últimas Correções (Dez 2025)
+
+**RSI Alert Duplicate Prevention:**
+- **Problema:** Múltiplos alertas RSI idênticos sendo enviados no mesmo candle
+- **Causa:** `last_condition` era atualizado apenas após envio bem-sucedido (engine.py:920), não na coleta
+- **Solução #1:** Marcar `last_condition` imediatamente em `_collect_single_alert()` (engine.py:583) para bloqueio imediato de duplicatas
+- **Solução #2:** Implementar lógica de severidade em `_is_repeated_condition()` (engine.py:545-581):
+  - ✅ Permite escalação: OVERSOLD(1) → EXTREME_OVERSOLD(2)
+  - ❌ Bloqueia redução: EXTREME_OVERSOLD(2) → OVERSOLD(1)
+  - ❌ Bloqueia mesmo nível: EXTREME(2) → EXTREME(2)
+  - Reset: Apenas quando RSI volta à recovery zone (35-65)
+- **Resultado:** Fluxo correto de alertas sem duplicatas, com escalação permitida
 
 ---
 
