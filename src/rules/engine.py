@@ -542,12 +542,43 @@ class AlertEngine:
         """Return template function for breakout type"""
         return template_breakout_bull if breakout_type == "BULL" else template_breakout_bear
 
+    def _get_rsi_severity(self, condition: str) -> int:
+        """
+        Get severity level of RSI condition.
+        Only permits transition when severity increases (normal → oversold → extreme_oversold).
+        Once in oversold/overbought family, must return to recovery zone to reset.
+
+        Returns:
+            0: NORMAL (not in any family)
+            1: OVERSOLD or OVERBOUGHT (base level)
+            2: EXTREME_OVERSOLD or EXTREME_OVERBOUGHT (highest level)
+        """
+        if condition in ("OVERSOLD", "OVERBOUGHT"):
+            return 1
+        elif condition in ("EXTREME_OVERSOLD", "EXTREME_OVERBOUGHT"):
+            return 2
+        return 0
+
     def _is_repeated_condition(self, tracker_key: str, current_condition: str) -> bool:
-        """Check if condition hasn't changed since last alert (anti-spam)."""
+        """
+        Check if should block alert based on last condition severity.
+        Permits transition only if severity increases (OVERSOLD → EXTREME_OVERSOLD).
+        Blocks if same severity or lower (prevents re-alerting until recovery zone).
+        """
         last_condition = self.last_condition.get(tracker_key)
-        if last_condition is not None and last_condition == current_condition:
-            return True
-        return False
+        if last_condition is None:
+            return False  # First alert after recovery zone, permit
+
+        last_severity = self._get_rsi_severity(last_condition)
+        current_severity = self._get_rsi_severity(current_condition)
+
+        # Only permit if severity increases (e.g., OVERSOLD(1) → EXTREME_OVERSOLD(2))
+        if current_severity > last_severity:
+            return False  # Permit escalation
+
+        # Block if same severity, lower severity, or not in same family
+        # Must return to recovery zone to reset
+        return True
 
     def _check_throttle_and_mark(self, condition_key: str, alert_key: str) -> bool:
         """
