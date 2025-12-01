@@ -15,7 +15,7 @@ telegram:
 # Symbols to monitor (free tier: BTCUSDT only)
 symbols:
   - name: "BTCUSDT"
-    timeframes: ["1h", "4h", "1d", "1w"]
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
 
 # Historical data backfill on startup
 backfill:

@@ -74,9 +74,9 @@ def fetch_recent_candles_for_rsi(symbol: str, interval: str, period: int = 14) -
     from src.storage.models import Candle
     from sqlalchemy import and_
 
-    # Fetch last (period + 20) candles to ensure we have enough
-    # +20 buffer for safety (in case some candles are missing)
-    limit = period + 20
+    # Fetch last (period + 100) candles to ensure sufficient historical data
+    # +100 buffer for RMA convergence (TradingView compatibility, needs ~100+ candles)
+    limit = period + 100
 
     with SessionLocal() as session:
         candles = session.query(Candle).filter(

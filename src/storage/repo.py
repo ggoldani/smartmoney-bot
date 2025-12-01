@@ -42,5 +42,5 @@ def save_candle_event(event: Dict) -> bool:
 def get_previous_closed_candle(symbol: str, interval: str) -> Optional[Candle]:
     """Get most recent closed candle (day that just closed)."""
     with SessionLocal() as session:
-        return session.query(Candle).filter_by(symbol=symbol, interval=interval).order_by(Candle.open_time.desc()).first()
+        return session.query(Candle).filter_by(symbol=symbol, interval=interval, is_closed=1).order_by(Candle.open_time.desc()).first()
 
