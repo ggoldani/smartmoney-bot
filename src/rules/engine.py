@@ -577,6 +577,11 @@ class AlertEngine:
         self.alerted_candles[alert_key] = True
         self.alerted_candles_with_timestamp[alert_key] = time.time()
 
+        # CRITICAL FIX: Mark last_condition IMMEDIATELY when collecting alert
+        # This prevents duplicate alerts in same candle before send completes
+        # Without this, multiple loops collect same alert before last_condition is set
+        self.last_condition[tracker_key] = condition
+
         # Build alert dict with common fields
         alert_dict = {
             'type': alert_type,

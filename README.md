@@ -2,7 +2,7 @@
 
 Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts + **divergência RSI** (pivots bullish/bearish) + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
 
-**Status:** v2.3.0 - Sprint 4 completo ✅ (RSI Divergence implementado) | Tier: FREE
+**Status:** v2.3.1 - Sprint 4 + Daily Summary fixes ✅ | Tier: FREE
 
 ---
 
@@ -46,7 +46,7 @@ docker-compose up -d
 | **2** ✅ | Healthcheck | HTTP endpoints `/health` e `/status` porta 8080 |
 | **2** ✅ | Deploy Auto | Script completo (`scripts/deploy.sh`) com UFW + Fail2Ban + systemd sandbox |
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
-| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:01 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior** |
+| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:01 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior (FIXED: 1M data, closed candles, convergence)** |
 | **3** ✅ | **Fear & Greed API** | **CoinMarketCap API v3 (`value`/`value_classification`) + exponential backoff (2s-4s-8s)** |
 | **4** ✅ | **RSI Divergence** | **3-candle pivots (bullish=lowest, bearish=highest) + RSI confirmation (price↔RSI diverge) + 2-pivot alert** |
 | **4** ✅ | **Divergence Config** | **Timeframes (4h, 1d, 1w), lookback (20 candles), debug mode, estado persiste entre restarts** |
