@@ -84,8 +84,11 @@ class AlertEngine:
         self.throttler = get_throttler()
 
         # NEW: Divergence state tracking (separate per timeframe/type)
+        # Initialize dynamically from config (consistent with RSI/Breakout pattern)
+        divergence_config = get_divergence_config()
+        configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
         self.divergence_state = {
-            "4h": {
+            tf: {
                 "bullish": {
                     "last": None,      # {price, rsi}
                     "prev": None       # {price, rsi}
@@ -94,27 +97,8 @@ class AlertEngine:
                     "last": None,
                     "prev": None
                 }
-            },
-            "1d": {
-                "bullish": {
-                    "last": None,
-                    "prev": None
-                },
-                "bearish": {
-                    "last": None,
-                    "prev": None
-                }
-            },
-            "1w": {
-                "bullish": {
-                    "last": None,
-                    "prev": None
-                },
-                "bearish": {
-                    "last": None,
-                    "prev": None
-                }
             }
+            for tf in configured_timeframes
         }
 
         # NEW: Flag to ensure divergence state is initialized only once
@@ -173,6 +157,7 @@ class AlertEngine:
         """
         Scan historical candles to populate divergence state at startup.
         Excludes currently open candle. Marks pivots as alerted to prevent re-alerting on restart.
+        Initializes state dynamically from config (consistent with RSI/Breakout pattern).
         """
         from src.indicators.divergence import (
             fetch_candles_for_divergence,
@@ -182,11 +167,13 @@ class AlertEngine:
         )
 
         symbol = "BTCUSDT"
-        lookback_config = {
-            "4h": 20,
-            "1d": 20,
-            "1w": 20
-        }
+        # Get timeframes and lookback from config (dynamic initialization)
+        divergence_config = get_divergence_config()
+        configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
+        lookback = divergence_config.get('lookback', 20)
+        
+        # Create lookback config for all configured timeframes
+        lookback_config = {tf: lookback for tf in configured_timeframes}
 
         for interval, lookback in lookback_config.items():
             try:
@@ -260,13 +247,13 @@ class AlertEngine:
 
     async def _process_divergences(self, symbol: str, interval: str, open_time: int):
         """
-        Check for divergences on 4h, 1d, 1w.
+        Check for divergences on configured timeframes (from config).
         Called for EACH candle in the loop (consistent with _collect_rsi_alert, _collect_breakout_alert).
         Detects and sends alerts for bullish/bearish divergences.
 
         Args:
             symbol: Trading pair (e.g., "BTCUSDT")
-            interval: Timeframe (4h, 1d, 1w)
+            interval: Timeframe (e.g., "1h", "4h", "1d", "1w" - must be in config)
             open_time: Current candle's open_time (used for alert_key)
         """
         from src.indicators.divergence import (
