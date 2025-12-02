@@ -450,7 +450,7 @@ def template_daily_summary(
     else:
         variation_pct = 0
 
-    variation_sign = "+" if variation_pct >= 0 else ""
+    variation_sign = "+" if variation_pct > 0 else "-" if variation_pct < 0 else ""
     variation_formatted = format_percentage_br(abs(variation_pct))
     price_open_formatted = format_price_br(price_open)
     price_close_formatted = format_price_br(price_close)

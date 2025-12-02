@@ -225,6 +225,7 @@ class TestDailySummaryTemplate:
         )
 
         # Check for negative variation (-5.97%)
+        assert "-" in message  # Must have minus sign for negative variation
         assert "Variação do Dia" in message
         assert "Abertura: $67.000,00" in message
         assert "Fechamento: $63.000,00" in message
