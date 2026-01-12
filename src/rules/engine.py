@@ -276,8 +276,8 @@ class AlertEngine:
             return
 
         try:
-            # Fetch last 5 candles (need 3 for pivot + buffer)
-            candles = fetch_candles_for_divergence(symbol, interval, 5)
+            # Fetch last 20 candles (need 3 for pivot + 14+ for RSI calculation + buffer)
+            candles = fetch_candles_for_divergence(symbol, interval, 20)
 
             if len(candles) < 3:
                 return
