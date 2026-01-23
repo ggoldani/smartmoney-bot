@@ -113,17 +113,15 @@ async def run_bot():
         logger.error("Startup failed, exiting...")
         return
 
-    # Get first symbol config for WebSocket (free tier = BTCUSDT only)
+    # Get all symbols config for WebSocket (supports multiple symbols)
     symbols_cfg = get_symbols()
     if not symbols_cfg:
         logger.error("No symbols configured, exiting...")
         return
 
-    first_symbol = symbols_cfg[0]
-    symbol = first_symbol["name"]
-    timeframes = first_symbol["timeframes"]
-
-    logger.info(f"Starting main bot tasks: WebSocket ({symbol}) + Alert Engine + DB Cleanup + Healthcheck")
+    # Log symbols being tracked
+    symbol_names = [s["name"] for s in symbols_cfg]
+    logger.info(f"Starting main bot tasks: WebSocket ({', '.join(symbol_names)}) + Alert Engine + DB Cleanup + Healthcheck")
 
     # Start alert engine and healthcheck server
     alert_engine = get_alert_engine()
@@ -131,7 +129,7 @@ async def run_bot():
 
     # Create tasks
     tasks = [
-        asyncio.create_task(listen_multi_klines(symbol, timeframes), name="WebSocket"),
+        asyncio.create_task(listen_multi_klines(symbols_cfg), name="WebSocket"),
         asyncio.create_task(alert_engine.run(), name="AlertEngine"),
         asyncio.create_task(schedule_cleanup_task(), name="DBCleanup"),
         asyncio.create_task(healthcheck.run(), name="Healthcheck"),
@@ -196,7 +194,9 @@ def main():
     if args.ws_multi:
         from src.datafeeds.binance_ws import listen_multi_klines
         logger.info("Starting WebSocket multi-TF test...")
-        asyncio.run(listen_multi_klines(symbol="BTCUSDT", intervals=["4h", "1d", "1w", "1M"]))
+        # Test with single symbol (new format: list of config dicts)
+        test_config = [{"name": "BTCUSDT", "timeframes": ["4h", "1d", "1w", "1M"]}]
+        asyncio.run(listen_multi_klines(test_config))
         return
 
     if args.ping:

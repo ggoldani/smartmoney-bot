@@ -385,7 +385,7 @@ class TestFetchCandlesForDivergence:
 
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_success(self, mock_session_class, mock_candle, sample_candles):
-        """Should successfully fetch candles."""
+        """Should successfully fetch candles ordered desc then reversed (oldest first)."""
         mock_session = MagicMock()
         mock_query = MagicMock()
         mock_filter = MagicMock()
@@ -394,14 +394,20 @@ class TestFetchCandlesForDivergence:
         mock_session_class.return_value.__enter__.return_value = mock_session
         mock_session_class.return_value.__exit__.return_value = None
 
+        # Simulate DB returning newest first (desc order)
+        newest_first = list(reversed(sample_candles[:5]))
+        
         mock_session.query.return_value = mock_query
         mock_query.filter.return_value = mock_filter
         mock_filter.order_by.return_value = mock_order
-        mock_order.limit.return_value.all.return_value = sample_candles[:5]
+        mock_order.limit.return_value.all.return_value = newest_first
 
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
         assert len(result) == 5
+        # Should be reversed to oldest first
         assert result == sample_candles[:5]
+        # Verify order_by was called with desc
+        mock_filter.order_by.assert_called_once()
 
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_empty_result(self, mock_session_class):
@@ -427,16 +433,45 @@ class TestFetchCandlesForDivergence:
 
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_custom_lookback(self, mock_session_class, mock_candle, sample_candles):
-        """Should respect custom lookback parameter."""
+        """Should respect custom lookback parameter and return oldest first."""
         mock_session = MagicMock()
 
         mock_session_class.return_value.__enter__.return_value = mock_session
         mock_session_class.return_value.__exit__.return_value = None
 
-        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = sample_candles[:10]
+        # Simulate DB returning newest first (desc order)
+        newest_first = list(reversed(sample_candles[:10]))
+        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = newest_first
 
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 10)
         assert len(result) == 10
+        # Should be reversed to oldest first
+        assert result == sample_candles[:10]
+    
+    @patch('src.storage.db.SessionLocal')
+    def test_fetch_candles_orders_desc_then_reverses(self, mock_session_class, mock_candle):
+        """Should fetch newest candles first (desc) then reverse to oldest first."""
+        mock_session = MagicMock()
+        
+        # Create candles with increasing open_time
+        base_time = int(datetime.now().timestamp()) * 1000
+        candles = [
+            mock_candle(open_time=base_time + i * 86400000, close=100.0 + i)
+            for i in range(5)
+        ]
+        
+        mock_session_class.return_value.__enter__.return_value = mock_session
+        mock_session_class.return_value.__exit__.return_value = None
+        
+        # DB returns newest first (desc)
+        newest_first = list(reversed(candles))
+        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = newest_first
+        
+        result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
+        
+        # Should be reversed to oldest first
+        assert result == candles
+        assert result[0].open_time < result[-1].open_time
 
 
 # ==================== TESTS: DIVERGENCE INTEGRATION ====================

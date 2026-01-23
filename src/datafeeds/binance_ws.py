@@ -42,14 +42,15 @@ def _should_save_candle(event: dict) -> bool:
 
     return False
 
-def normalize_kline(symbol: str, data: dict) -> dict:
+def normalize_kline(data: dict) -> dict:
     """
     Converte o kline da Binance (chave 'k') no formato padrão do projeto.
     Espera um dict com a chave 'k' (data['k']).
+    Extrai o símbolo do payload (k["s"]).
     """
     k = data["k"]
     return {
-        "symbol": symbol.upper(),
+        "symbol": k["s"].upper(),                  # Extrai do payload
         "interval": k["i"],                        # "4h" | "1d" | "1w" | "1M"
         "open_time": int(k["t"]),                  # ms UTC
         "close_time": int(k["T"]),                 # ms UTC
@@ -96,7 +97,7 @@ async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
                         continue
 
                     # 🚀 normaliza
-                    event = normalize_kline(symbol, msg)  # msg tem {"k": {...}}
+                    event = normalize_kline(msg)  # msg tem {"k": {...}}, símbolo extraído do payload
                     print(event)
 
                     # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
@@ -115,22 +116,37 @@ import urllib.parse
 
 BINANCE_WS_COMBINED = "wss://stream.binance.com:9443/stream"
 
-def _multi_stream_url(symbol: str, intervals: list[str]) -> str:
-    streams = [f"{symbol.lower()}@kline_{itv}" for itv in intervals]
+def _multi_stream_url(symbols_config: list[dict]) -> str:
+    """
+    Build combined stream URL for multiple symbols and timeframes.
+    
+    Args:
+        symbols_config: List of dicts with 'name' and 'timeframes' keys
+                       Example: [{"name": "BTCUSDT", "timeframes": ["1h", "4h"]}]
+    
+    Returns:
+        Combined stream URL for Binance WebSocket
+    """
+    streams = []
+    for sym in symbols_config:
+        symbol = sym["name"].lower()
+        for interval in sym["timeframes"]:
+            streams.append(f"{symbol}@kline_{interval}")
     q = urllib.parse.urlencode({"streams": "/".join(streams)})
     return f"{BINANCE_WS_COMBINED}?{q}"
 
-async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = None) -> None:
+async def listen_multi_klines(symbols_config: list[dict]) -> None:
     """
-    Combined stream com reconexão robusta:
+    Combined stream com reconexão robusta para múltiplos símbolos:
     - backoff exponencial com jitter (1s -> 2 -> 4 ... até 30s, com +/-20%)
     - watchdog de inatividade: se não chegar mensagem em 90s, reconecta
     - recv com timeout de 30s (evita ficar pendurado indefinidamente)
+    
+    Args:
+        symbols_config: List of dicts with 'name' and 'timeframes' keys
+                       Example: [{"name": "BTCUSDT", "timeframes": ["1h", "4h"]}]
     """
-    if intervals is None:
-        intervals = ["4h", "1d", "1w", "1M"]
-
-    url = _multi_stream_url(symbol, intervals)
+    url = _multi_stream_url(symbols_config)
     base_backoff = 1      # valor base que vamos exponenciar
     max_backoff = 30      # teto do backoff
 
@@ -170,7 +186,7 @@ async def listen_multi_klines(symbol: str = "BTCUSDT", intervals: list[str] = No
 
                     last_msg_ts = datetime.now(timezone.utc)
 
-                    event = normalize_kline(symbol, data)
+                    event = normalize_kline(data)
                     print(event)
 
                     # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
