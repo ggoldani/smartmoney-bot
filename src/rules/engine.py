@@ -1092,43 +1092,61 @@ class AlertEngine:
                     fgi_value, fgi_label = await fetch_fear_greed_index()
                     fgi_emoji, fgi_sentiment = get_fear_greed_sentiment(fgi_value)
 
-                    # Get RSI 1D, 1W, 1M for BTCUSDT
-                    symbol = "BTCUSDT"
+                    # Get all symbols from config
+                    from src.config import get_symbols
+                    symbols_cfg = get_symbols()
+                    
+                    if not symbols_cfg:
+                        logger.warning("No symbols configured for daily summary")
+                        continue
+                    
                     period = self.rsi_config.get('period', 14)
                     overbought = self.rsi_config.get('overbought', 70)
                     oversold = self.rsi_config.get('oversold', 30)
-
-                    rsi_1d_result = analyze_rsi(symbol, "1d", overbought, oversold, period)
-                    rsi_1d = rsi_1d_result.get('rsi', 0) if rsi_1d_result else 0
-
-                    rsi_1w_result = analyze_rsi(symbol, "1w", overbought, oversold, period)
-                    rsi_1w = rsi_1w_result.get('rsi', 0) if rsi_1w_result else 0
-
-                    rsi_1m_result = analyze_rsi(symbol, "1M", overbought, oversold, period)
-                    rsi_1m = rsi_1m_result.get('rsi', 0) if rsi_1m_result else 0
-
-                    # Get previous day closed candle (open/close prices)
+                    
+                    # Collect data for each symbol
+                    symbols_data = []
                     from src.storage.repo import get_previous_closed_candle
-                    closed_candle = get_previous_closed_candle(symbol, "1d")
-                    price_open = closed_candle.open if closed_candle else 0
-                    price_close = closed_candle.close if closed_candle else 0
+                    
+                    for sym_config in symbols_cfg:
+                        symbol = sym_config["name"]
+                        
+                        # Get RSI for 1D, 1W, 1M
+                        rsi_1d_result = analyze_rsi(symbol, "1d", overbought, oversold, period)
+                        rsi_1d = rsi_1d_result.get('rsi', 0) if rsi_1d_result else 0
 
-                    # Generate and send message
-                    message = template_daily_summary(
-                        symbol=symbol,
+                        rsi_1w_result = analyze_rsi(symbol, "1w", overbought, oversold, period)
+                        rsi_1w = rsi_1w_result.get('rsi', 0) if rsi_1w_result else 0
+
+                        rsi_1m_result = analyze_rsi(symbol, "1M", overbought, oversold, period)
+                        rsi_1m = rsi_1m_result.get('rsi', 0) if rsi_1m_result else 0
+
+                        # Get previous day closed candle (open/close prices)
+                        closed_candle = get_previous_closed_candle(symbol, "1d")
+                        price_open = closed_candle.open if closed_candle else 0
+                        price_close = closed_candle.close if closed_candle else 0
+                        
+                        symbols_data.append({
+                            "symbol": symbol,
+                            "rsi_1d": rsi_1d,
+                            "rsi_1w": rsi_1w,
+                            "rsi_1m": rsi_1m,
+                            "price_open": price_open,
+                            "price_close": price_close
+                        })
+
+                    # Generate and send consolidated message
+                    from src.notif.templates import template_daily_summary_multi
+                    message = template_daily_summary_multi(
+                        symbols_data=symbols_data,
                         fear_greed_value=fgi_value if fgi_value else 0,
                         fear_greed_label=fgi_sentiment,
-                        rsi_1d=rsi_1d,
-                        rsi_1w=rsi_1w,
-                        rsi_1m=rsi_1m,
-                        price_open=price_open,
-                        price_close=price_close,
                         fear_emoji=fgi_emoji
                     )
 
                     success = await send_message_async(message)
                     if success:
-                        logger.info("✅ Daily summary sent")
+                        logger.info(f"✅ Daily summary sent ({len(symbols_data)} symbols)")
                         self.throttler.record_alert("DAILY_SUMMARY")
                     else:
                         logger.error("❌ Failed to send daily summary")

@@ -4,8 +4,13 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 
-# Load environment variables from .env
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+# Load environment variables from .env (silently fail if file doesn't exist or no permission)
+try:
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    load_dotenv(dotenv_path=env_path, override=False)
+except (PermissionError, FileNotFoundError):
+    # Silently ignore if .env doesn't exist or no permission (e.g., during tests)
+    pass
 
 # Environment variables (secrets)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")

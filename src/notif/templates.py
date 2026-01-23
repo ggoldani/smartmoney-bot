@@ -412,3 +412,81 @@ RSI: 1D {rsi_1d_fmt} | 1W {rsi_1w_fmt} | 1M {rsi_1m_fmt}
 Preço: {price_close_formatted} ({variation_sign}{variation_formatted})
 {timestamp}
 {ALERT_DISCLAIMER}"""
+
+
+def template_daily_summary_multi(
+    symbols_data: List[Dict],
+    fear_greed_value: int,
+    fear_greed_label: str,
+    fear_emoji: str = "❓"
+) -> str:
+    """
+    Template for daily summary with multiple symbols (consolidated message).
+
+    Args:
+        symbols_data: List of dicts with symbol data:
+            [{
+                "symbol": "BTCUSDT",
+                "rsi_1d": 52.3,
+                "rsi_1w": 48.1,
+                "rsi_1m": 55.2,
+                "price_open": 104000.0,
+                "price_close": 104250.0
+            }, ...]
+        fear_greed_value: Fear & Greed Index value (0-100)
+        fear_greed_label: Sentiment from API
+        fear_emoji: Emoji representing sentiment
+    """
+    timestamp = format_datetime_br()
+    date_str = format_datetime_br().split()[0]  # Get date part (DD/MM/YYYY)
+    
+    # Build message header
+    message_parts = [f"Resumo Diário - {date_str}", ""]
+    message_parts.append(f"Fear & Greed: {fear_greed_value}/100 ({fear_greed_label})")
+    message_parts.append("")
+    
+    # Process each symbol
+    for symbol_info in symbols_data:
+        symbol = symbol_info.get("symbol", "")
+        rsi_1d = symbol_info.get("rsi_1d", 0)
+        rsi_1w = symbol_info.get("rsi_1w", 0)
+        rsi_1m = symbol_info.get("rsi_1m", 0)
+        price_open = symbol_info.get("price_open", 0)
+        price_close = symbol_info.get("price_close", 0)
+        
+        symbol_display = format_symbol_display(symbol)
+        
+        # Format RSI with ALTA/BAIXA
+        rsi_1d_fmt = format_rsi_value(rsi_1d)
+        rsi_1w_fmt = format_rsi_value(rsi_1w)
+        rsi_1m_fmt = format_rsi_value(rsi_1m)
+        
+        rsi_1d_trend = "📈 ALTA" if rsi_1d >= 50 else "📉 BAIXA"
+        rsi_1w_trend = "📈 ALTA" if rsi_1w >= 50 else "📉 BAIXA"
+        rsi_1m_trend = "📈 ALTA" if rsi_1m >= 50 else "📉 BAIXA"
+        
+        # Calculate price variation
+        if price_open > 0:
+            variation_pct = ((price_close - price_open) / price_open) * 100
+        else:
+            variation_pct = 0
+        
+        variation_sign = "+" if variation_pct > 0 else "-" if variation_pct < 0 else ""
+        variation_formatted = format_percentage_br(abs(variation_pct))
+        price_close_formatted = format_price_br(price_close)
+        
+        # Add symbol section
+        message_parts.append(f"{symbol_display}")
+        message_parts.append(
+            f"RSI: 1D {rsi_1d_fmt} {rsi_1d_trend} | "
+            f"1W {rsi_1w_fmt} {rsi_1w_trend} | "
+            f"1M {rsi_1m_fmt} {rsi_1m_trend}"
+        )
+        message_parts.append(f"Preço: {price_close_formatted} ({variation_sign}{variation_formatted})")
+        message_parts.append("")
+    
+    # Add footer
+    message_parts.append(timestamp)
+    message_parts.append(ALERT_DISCLAIMER)
+    
+    return "\n".join(message_parts)

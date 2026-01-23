@@ -9,7 +9,7 @@ from src.datafeeds.fear_greed import (
     fetch_fear_greed_index,
     get_fear_greed_sentiment
 )
-from src.notif.templates import template_daily_summary
+from src.notif.templates import template_daily_summary, template_daily_summary_multi
 from src.config import get_daily_summary_config
 
 
@@ -465,3 +465,280 @@ class TestDailySummaryEdgeCases:
         assert "Variação do Dia" in message
         # Variation is (67001-67000)/67000 = 0.0149% ≈ 0.01%
         assert "+" in message
+
+
+# ==================== TESTS: MULTI-SYMBOL DAILY SUMMARY ====================
+
+class TestDailySummaryMultiTemplate:
+    """Tests for multi-symbol daily summary template."""
+
+    def test_template_multi_single_symbol(self):
+        """Should format message with single symbol."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 52.3,
+            "rsi_1w": 48.1,
+            "rsi_1m": 55.2,
+            "price_open": 104000.0,
+            "price_close": 104250.0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=45,
+            fear_greed_label="Medo",
+            fear_emoji="😨"
+        )
+        
+        assert "Resumo Diário" in message
+        assert "Fear & Greed: 45/100 (Medo)" in message
+        assert "BTC/USDT" in message
+        assert "52,30" in message
+        assert "48,10" in message
+        assert "55,20" in message
+        assert "📈 ALTA" in message
+        assert "📉 BAIXA" in message
+
+    def test_template_multi_multiple_symbols(self):
+        """Should format message with multiple symbols."""
+        symbols_data = [
+            {
+                "symbol": "BTCUSDT",
+                "rsi_1d": 52.3,
+                "rsi_1w": 48.1,
+                "rsi_1m": 55.2,
+                "price_open": 104000.0,
+                "price_close": 104250.0
+            },
+            {
+                "symbol": "PAXGUSDT",
+                "rsi_1d": 61.2,
+                "rsi_1w": 58.3,
+                "rsi_1m": 62.1,
+                "price_open": 2650.0,
+                "price_close": 2640.0
+            }
+        ]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            fear_emoji="😐"
+        )
+        
+        assert "BTC/USDT" in message
+        assert "PAXG/USDT" in message
+        assert "52,30" in message
+        assert "61,20" in message
+        assert "Fear & Greed: 50/100 (Neutro)" in message
+
+    def test_template_multi_symbol_no_data(self):
+        """Should handle symbol with no data (RSI=0, price=0)."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 0,
+            "rsi_1w": 0,
+            "rsi_1m": 0,
+            "price_open": 0,
+            "price_close": 0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=45,
+            fear_greed_label="Medo",
+            fear_emoji="😨"
+        )
+        
+        assert "BTC/USDT" in message
+        assert "0,00" in message
+        assert "📉 BAIXA" in message  # RSI=0 < 50
+
+    def test_template_multi_price_variation_positive(self):
+        """Should show positive price variation correctly."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 55.0,
+            "rsi_1w": 52.0,
+            "rsi_1m": 58.0,
+            "price_open": 100000.0,
+            "price_close": 101250.0  # +1.25%
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=60,
+            fear_greed_label="Ganância",
+            fear_emoji="😊"
+        )
+        
+        assert "+1,25%" in message or "+1,25" in message
+
+    def test_template_multi_price_variation_negative(self):
+        """Should show negative price variation correctly."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 45.0,
+            "rsi_1w": 42.0,
+            "rsi_1m": 48.0,
+            "price_open": 100000.0,
+            "price_close": 98750.0  # -1.25%
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=40,
+            fear_greed_label="Medo",
+            fear_emoji="😨"
+        )
+        
+        assert "-1,25%" in message or "-1,25" in message
+
+    def test_template_multi_price_variation_zero(self):
+        """Should handle zero price variation."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 50.0,
+            "rsi_1w": 50.0,
+            "rsi_1m": 50.0,
+            "price_open": 100000.0,
+            "price_close": 100000.0  # 0%
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            fear_emoji="😐"
+        )
+        
+        assert "0,00%" in message or "0,00" in message
+
+    def test_template_multi_rsi_trends(self):
+        """Should show correct ALTA/BAIXA trends for RSI."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 75.0,   # > 50 = ALTA
+            "rsi_1w": 35.0,   # < 50 = BAIXA
+            "rsi_1m": 52.0,   # > 50 = ALTA
+            "price_open": 100000.0,
+            "price_close": 100000.0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            fear_emoji="😐"
+        )
+        
+        assert "1D 75,00 📈 ALTA" in message
+        assert "1W 35,00 📉 BAIXA" in message
+        assert "1M 52,00 📈 ALTA" in message
+
+    def test_template_multi_fear_greed_extreme_greed(self):
+        """Should format message with extreme greed sentiment."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 55.0,
+            "rsi_1w": 52.0,
+            "rsi_1m": 58.0,
+            "price_open": 100000.0,
+            "price_close": 101000.0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=90,
+            fear_greed_label="Ganância Extrema",
+            fear_emoji="🤑"
+        )
+        
+        assert "Fear & Greed: 90/100 (Ganância Extrema)" in message
+
+    def test_template_multi_fear_greed_extreme_fear(self):
+        """Should format message with extreme fear sentiment."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 45.0,
+            "rsi_1w": 42.0,
+            "rsi_1m": 48.0,
+            "price_open": 100000.0,
+            "price_close": 99000.0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=10,
+            fear_greed_label="Medo Extremo",
+            fear_emoji="😱"
+        )
+        
+        assert "Fear & Greed: 10/100 (Medo Extremo)" in message
+
+    def test_template_multi_three_symbols(self):
+        """Should format message with three symbols."""
+        symbols_data = [
+            {
+                "symbol": "BTCUSDT",
+                "rsi_1d": 52.3,
+                "rsi_1w": 48.1,
+                "rsi_1m": 55.2,
+                "price_open": 104000.0,
+                "price_close": 104250.0
+            },
+            {
+                "symbol": "PAXGUSDT",
+                "rsi_1d": 61.2,
+                "rsi_1w": 58.3,
+                "rsi_1m": 62.1,
+                "price_open": 2650.0,
+                "price_close": 2640.0
+            },
+            {
+                "symbol": "ETHUSDT",
+                "rsi_1d": 48.5,
+                "rsi_1w": 45.2,
+                "rsi_1m": 50.1,
+                "price_open": 3500.0,
+                "price_close": 3520.0
+            }
+        ]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            fear_emoji="😐"
+        )
+        
+        assert "BTC/USDT" in message
+        assert "PAXG/USDT" in message
+        assert "ETH/USDT" in message
+        # Verify all symbols appear in formatted form
+        assert message.count("BTC/USDT") >= 1
+        assert message.count("PAXG/USDT") >= 1
+        assert message.count("ETH/USDT") >= 1
+
+    def test_template_multi_rsi_at_50_boundary(self):
+        """Should handle RSI exactly at 50 (should be ALTA)."""
+        symbols_data = [{
+            "symbol": "BTCUSDT",
+            "rsi_1d": 50.0,   # Exactly 50 = ALTA (>= 50)
+            "rsi_1w": 49.99,  # < 50 = BAIXA
+            "rsi_1m": 50.01,  # > 50 = ALTA
+            "price_open": 100000.0,
+            "price_close": 100000.0
+        }]
+        
+        message = template_daily_summary_multi(
+            symbols_data=symbols_data,
+            fear_greed_value=50,
+            fear_greed_label="Neutro",
+            fear_emoji="😐"
+        )
+        
+        assert "1D 50,00 📈 ALTA" in message
+        assert "1W 49,99 📉 BAIXA" in message
+        assert "1M 50,01 📈 ALTA" in message
