@@ -105,13 +105,14 @@ def fetch_candles_for_divergence(
                     Candle.symbol == symbol,
                     Candle.interval == interval
                 )
-            ).order_by(Candle.open_time.asc()).limit(lookback).all()
+            ).order_by(Candle.open_time.desc()).limit(lookback).all()
 
             if not candles:
                 logger.debug(f"No candles found for divergence {symbol} {interval}")
                 return []
 
-            return candles
+            # Return oldest -> newest (expected by RSI calc and pivot logic)
+            return list(reversed(candles))
 
     except Exception as e:
         logger.error(f"Failed to fetch divergence candles {symbol} {interval}: {e}")

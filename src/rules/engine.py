@@ -276,8 +276,9 @@ class AlertEngine:
             return
 
         try:
-            # Fetch last 20 candles (need 3 for pivot + 14+ for RSI calculation + buffer)
-            candles = fetch_candles_for_divergence(symbol, interval, 20)
+            # Fetch enough candles for RSI calc + pivot detection
+            lookback = divergence_config.get('lookback', 20)
+            candles = fetch_candles_for_divergence(symbol, interval, lookback)
 
             if len(candles) < 3:
                 return
@@ -298,6 +299,13 @@ class AlertEngine:
             three_rsi = rsi_values[-3:]
 
             debug_enabled = divergence_config.get('debug_divergence', False)
+
+            if three_rsi[1] is None:
+                if debug_enabled:
+                    logger.debug(
+                        f"Divergence skipped (RSI unavailable) {symbol} {interval}: "
+                        f"len_candles={len(candles)}"
+                    )
 
             # ===== BULLISH DIVERGENCE CHECK =====
             if is_bullish_pivot(three_candles) and three_rsi[1] is not None:
@@ -321,7 +329,7 @@ class AlertEngine:
                         # Check if already alerted (prevent duplicates within same candle)
                         if alert_key not in self.alerted_candles:
                             # Divergence detected! Send alert
-                            await self._send_divergence_alert("BULLISH", interval)
+                            await self._send_divergence_alert("BULLISH", interval, symbol, current_low, current_rsi)
                             logger.info(f"BULLISH divergence detected {symbol} {interval}")
 
                             # Mark as alerted (Risco 6: prevent re-alerting)
@@ -362,7 +370,7 @@ class AlertEngine:
                         # Check if already alerted (prevent duplicates within same candle)
                         if alert_key not in self.alerted_candles:
                             # Divergence detected! Send alert
-                            await self._send_divergence_alert("BEARISH", interval)
+                            await self._send_divergence_alert("BEARISH", interval, symbol, current_high, current_rsi)
                             logger.info(f"BEARISH divergence detected {symbol} {interval}")
 
                             # Mark as alerted (Risco 6: prevent re-alerting)
@@ -384,44 +392,30 @@ class AlertEngine:
         except Exception as e:
             logger.error(f"Failed to process divergences {symbol} {interval}: {e}")
 
-    async def _send_divergence_alert(self, div_type: str, interval: str):
+    async def _send_divergence_alert(self, div_type: str, interval: str, symbol: str, price: float, rsi: float):
         """
         Send divergence alert to Telegram.
 
         Args:
             div_type: "BULLISH" or "BEARISH"
             interval: Timeframe (4h, 1d, 1w)
+            symbol: Trading pair symbol (e.g., "BTCUSDT")
+            price: Current price at divergence detection
+            rsi: Current RSI value at divergence detection
         """
-        symbol = "BTCUSDT"
-        message = self._format_divergence_alert(div_type, interval)
+        from src.notif.templates import template_divergence
 
+        data = {
+            "symbol": symbol,
+            "interval": interval,
+            "div_type": div_type,
+            "price": price,
+            "rsi": rsi
+        }
+
+        message = template_divergence(data)
         await send_message_async(message)
         logger.info(f"Divergence alert sent: {div_type} {interval}")
-
-    def _format_divergence_alert(self, div_type: str, interval: str) -> str:
-        """Format divergence alert message."""
-        from src.notif.formatter import format_datetime_br
-
-        # Emoji conforme direção
-        if div_type == "BULLISH":
-            emoji = "🔼"
-            title = f"{emoji} DIVERGÊNCIA BULLISH DETECTADA - BTC/USDT {interval.upper()}"
-        else:  # BEARISH
-            emoji = "🔽"
-            title = f"{emoji} DIVERGÊNCIA BEARISH DETECTADA - BTC/USDT {interval.upper()}"
-
-        # Timestamp BRT (reutilizar helper)
-        timestamp = format_datetime_br()
-
-        # Mensagem
-        message = (
-            f"{title}\n"
-            f"Possível reversão acontecendo\n"
-            f"⚠️ AVISO: Não é sinal, DYOR\n\n"
-            f"⏰ {timestamp}"
-        )
-
-        return message
 
     async def check_for_new_candles(self):
         """

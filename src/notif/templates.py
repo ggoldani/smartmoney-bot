@@ -14,10 +14,8 @@ from src.notif.formatter import (
 )
 from src.config import get_bot_name, get_bot_version
 
-# Disclaimer para todos os alertas
-ALERT_DISCLAIMER = """
-⚠️ IMPORTANTE: Este é apenas um alerta de condição de mercado.
-NÃO É recomendação de compra ou venda. DYOR."""
+# Disclaimer simplificado
+ALERT_DISCLAIMER = "⚠️ Apenas alerta de condição. Não é recomendação. DYOR."
 
 
 def template_rsi_overbought(data: Dict) -> str:
@@ -38,14 +36,9 @@ def template_rsi_overbought(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""🔴 RSI Sobrecomprado ({timeframe})
-
-💰 Mercado entrando em GANANCIA no {timeframe}.
-
-{symbol}: {price}
-RSI: {rsi}
-
-⏰ {timestamp}
+    return f"""RSI Sobrecomprado ({timeframe})
+{symbol} {price} | RSI {rsi}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -62,14 +55,9 @@ def template_rsi_oversold(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""🟢 RSI Sobrevendido ({timeframe})
-
-😨 Mercado entrando em MEDO no {timeframe}.
-
-{symbol}: {price}
-RSI: {rsi}
-
-⏰ {timestamp}
+    return f"""RSI Sobrevendido ({timeframe})
+{symbol} {price} | RSI {rsi}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -86,18 +74,9 @@ def template_rsi_extreme_overbought(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""🚨🔴 RSI EXTREMAMENTE SOBRECOMPRADO! ({timeframe})
-
-💸 Mercado entrando em GANANCIA EXTREMA no {timeframe}.
-
-⚠️ CONDIÇÃO EXTREMA DETECTADA!
-{symbol}: {price}
-RSI: {rsi}
-
-🔥 Mercado pode estar em topo absoluto!
-⚡ Atenção redobrada!
-
-⏰ {timestamp}
+    return f"""RSI EXTREMO Sobrecomprado ({timeframe})
+{symbol} {price} | RSI {rsi}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -114,18 +93,9 @@ def template_rsi_extreme_oversold(data: Dict) -> str:
     price = format_price_br(data["price"])
     timestamp = format_datetime_br()
 
-    return f"""🚨🟢 RSI EXTREMAMENTE SOBREVENDIDO! ({timeframe})
-
-😱 Mercado entrando em MEDO EXTREMO no {timeframe}.
-
-⚠️ CONDIÇÃO EXTREMA DETECTADA!
-{symbol}: {price}
-RSI: {rsi}
-
-🔥 Mercado pode estar em fundo absoluto!
-⚡ Atenção redobrada!
-
-⏰ {timestamp}
+    return f"""RSI EXTREMO Sobrevendido ({timeframe})
+{symbol} {price} | RSI {rsi}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -156,18 +126,14 @@ def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
         emoji = "🔴" if cond["condition"] == "OVERBOUGHT" else "🟢"
         condition_text = "Sobrecomprado" if cond["condition"] == "OVERBOUGHT" else "Sobrevendido"
 
-        tf_lines.append(f"  {emoji} {tf}: RSI {rsi} ({condition_text})")
+        tf_lines.append(f"{tf}: RSI {rsi} ({condition_text})")
 
-    tf_list = "\n".join(tf_lines)
+    tf_list = " | ".join(tf_lines)
 
-    return f"""🚨 ALERTA: Múltiplos Timeframes Críticos
-
-{symbol}: {price}
-
-Condições detectadas:
+    return f"""Múltiplos Timeframes Críticos
+{symbol} {price}
 {tf_list}
-
-⏰ {timestamp}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -191,16 +157,9 @@ def template_breakout_bull(data: Dict) -> str:
     change_pct = format_percentage_br(data["change_pct"])
     timestamp = format_datetime_br()
 
-    return f"""🚀 ROMPIMENTO DE ALTA AGORA! ({timeframe})
-
-⚡ {symbol} está rompendo a máxima anterior AGORA!
-👀 Observe o price action!
-
-Preço atual: {price}
-Máxima anterior: {prev_high}
-Variação: +{change_pct}
-
-⏰ {timestamp}
+    return f"""Rompimento de Alta ({timeframe})
+{symbol} {price} | Máx anterior: {prev_high} | +{change_pct}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -218,16 +177,37 @@ def template_breakout_bear(data: Dict) -> str:
     change_pct = format_percentage_br(abs(data["change_pct"]))
     timestamp = format_datetime_br()
 
-    return f"""📉 ROMPIMENTO DE BAIXA AGORA! ({timeframe})
+    return f"""Rompimento de Baixa ({timeframe})
+{symbol} {price} | Mín anterior: {prev_low} | -{change_pct}
+{timestamp}
+{ALERT_DISCLAIMER}"""
 
-⚡ {symbol} está rompendo a mínima anterior AGORA!
-👀 Observe o price action!
 
-Preço atual: {price}
-Mínima anterior: {prev_low}
-Variação: -{change_pct}
+def template_divergence(data: Dict) -> str:
+    """
+    Template for RSI divergence alert.
 
-⏰ {timestamp}
+    Args:
+        data: {
+            "symbol": "BTCUSDT",
+            "interval": "4h",
+            "div_type": "BULLISH" or "BEARISH",
+            "price": 67420.50,
+            "rsi": 35.2
+        }
+    """
+    symbol = format_symbol_display(data["symbol"])
+    timeframe = format_timeframe_display(data["interval"])
+    div_type = data["div_type"]
+    price = format_price_br(data["price"])
+    rsi = format_rsi_value(data["rsi"])
+    timestamp = format_datetime_br()
+
+    div_label = "Bullish" if div_type == "BULLISH" else "Bearish"
+
+    return f"""Divergência {div_label} ({timeframe})
+{symbol} {price} | RSI {rsi}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -240,18 +220,12 @@ def template_circuit_breaker(alert_count: int, conditions: List[str]) -> str:
         conditions: List of condition descriptions
     """
     timestamp = format_datetime_br()
-    conditions_list = "\n".join([f"• {c}" for c in conditions])
+    conditions_list = " | ".join(conditions)
 
-    return f"""🚨 VOLATILIDADE EXTREMA DETECTADA
-
-⚠️ {alert_count} condições críticas atingidas simultaneamente!
-
-Condições:
+    return f"""Volatilidade Extrema
+{alert_count} condições críticas simultâneas
 {conditions_list}
-
-📊 Recomenda-se cautela e análise cuidadosa antes de operar.
-
-⏰ {timestamp}"""
+{timestamp}"""
 
 
 def template_mega_alert(alerts: List[Dict]) -> str:
@@ -272,35 +246,34 @@ def template_mega_alert(alerts: List[Dict]) -> str:
             price = format_price_br(alert['price'])
 
             if alert['condition'] in ['EXTREME_OVERBOUGHT', 'EXTREME_OVERSOLD']:
-                emoji = '🔴🔴' if 'OVERBOUGHT' in alert['condition'] else '🟢🟢'
-                label = 'RSI EXTREMO SOBRECOMPRADO' if 'OVERBOUGHT' in alert['condition'] else 'RSI EXTREMO SOBREVENDIDO'
+                label = 'RSI EXTREMO' + (' Sobrecomprado' if 'OVERBOUGHT' in alert['condition'] else ' Sobrevendido')
             else:
-                emoji = '🔴' if 'OVERBOUGHT' in alert['condition'] else '🟢'
-                label = 'RSI SOBRECOMPRADO' if 'OVERBOUGHT' in alert['condition'] else 'RSI SOBREVENDIDO'
+                label = 'RSI' + (' Sobrecomprado' if 'OVERBOUGHT' in alert['condition'] else ' Sobrevendido')
 
-            alert_lines.append(f"{emoji} {label} ({tf})\n   {symbol}: {price} | RSI: {rsi}")
+            alert_lines.append(f"{label} ({tf}): {symbol} {price} | RSI {rsi}")
 
         elif alert['type'] == 'BREAKOUT':
             symbol = format_symbol_display(alert['symbol'])
             tf = format_timeframe_display(alert['interval'])
             price = format_price_br(alert['price'])
 
-            emoji = '🚀' if alert['condition'] == 'BULL' else '📉'
-            label = 'ROMPIMENTO DE ALTA' if alert['condition'] == 'BULL' else 'ROMPIMENTO DE BAIXA'
+            label = 'Rompimento de Alta' if alert['condition'] == 'BULL' else 'Rompimento de Baixa'
+            alert_lines.append(f"{label} ({tf}): {symbol} {price}")
 
-            alert_lines.append(f"{emoji} {label} ({tf})\n   {symbol}: {price}")
+        elif alert['type'] == 'DIVERGENCE':
+            symbol = format_symbol_display(alert['symbol'])
+            tf = format_timeframe_display(alert['interval'])
+            price = format_price_br(alert['price'])
+            rsi = format_rsi_value(alert['rsi'])
 
-    alerts_text = "\n\n".join(alert_lines)
+            div_label = 'Bullish' if alert['condition'] == 'BULLISH' else 'Bearish'
+            alert_lines.append(f"Divergência {div_label} ({tf}): {symbol} {price} | RSI {rsi}")
 
-    return f"""🚨🚨🚨 ALERTA CONSOLIDADO 🚨🚨🚨
+    alerts_text = "\n".join(alert_lines)
 
-⚠️ Múltiplas condições críticas detectadas!
-
+    return f"""Múltiplas Condições Críticas
 {alerts_text}
-
-📊 Analise com cuidado antes de operar.
-
-⏰ {timestamp}
+{timestamp}
 {ALERT_DISCLAIMER}"""
 
 
@@ -319,13 +292,10 @@ def template_startup(timeframes: List[str], symbols: List[str]) -> str:
     tf_display = ", ".join([format_timeframe_display(tf) for tf in timeframes])
     sym_display = ", ".join([format_symbol_display(s) for s in symbols])
 
-    return f"""✅ {bot_name} Iniciado (v{version})
-
-📊 Monitorando: {sym_display}
-⏱️ Timeframes: {tf_display}
-🔔 Alertas ativos: RSI, Rompimentos
-
-⏰ {timestamp}"""
+    return f"""{bot_name} iniciado (v{version})
+Monitorando: {sym_display}
+Timeframes: {tf_display}
+{timestamp}"""
 
 
 def template_shutdown() -> str:
@@ -333,12 +303,9 @@ def template_shutdown() -> str:
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    return f"""⚠️ {bot_name} Entrando em Manutenção
-
-O bot será reiniciado em breve.
-Alertas voltarão automaticamente após o restart.
-
-⏰ {timestamp}"""
+    return f"""{bot_name} em manutenção
+Reiniciando em breve. Alertas voltarão automaticamente.
+{timestamp}"""
 
 
 def template_error_admin(error_type: str, error_msg: str, context: str = "") -> str:
@@ -353,15 +320,14 @@ def template_error_admin(error_type: str, error_msg: str, context: str = "") -> 
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    msg = f"""❌ ERRO CRÍTICO - {error_type}
-
+    msg = f"""Erro: {error_type}
 Bot: {bot_name}
-Erro: {error_msg}"""
+{error_msg}"""
 
     if context:
         msg += f"\nContexto: {context}"
 
-    msg += f"\n\n⏰ {timestamp}"
+    msg += f"\n{timestamp}"
 
     return msg
 
@@ -377,12 +343,10 @@ def template_warning_admin(warning_type: str, warning_msg: str) -> str:
     bot_name = get_bot_name()
     timestamp = format_datetime_br()
 
-    return f"""⚠️ AVISO - {warning_type}
-
+    return f"""Aviso: {warning_type}
 Bot: {bot_name}
-Aviso: {warning_msg}
-
-⏰ {timestamp}"""
+{warning_msg}
+{timestamp}"""
 
 
 def template_backfill_complete(results: Dict[str, int]) -> str:
@@ -393,17 +357,12 @@ def template_backfill_complete(results: Dict[str, int]) -> str:
         results: {"1h": 200, "4h": 200, "1d": 200, "1w": 200}
     """
     total = sum(results.values())
-    details = "\n".join([f"  • {format_timeframe_display(tf)}: {count} velas"
-                         for tf, count in results.items()])
+    details = ", ".join([f"{format_timeframe_display(tf)}: {count}" for tf, count in results.items()])
 
-    return f"""✅ Backfill Histórico Completado
-
-Total: {total} velas salvas
-
-Detalhes:
+    return f"""Backfill concluído
+Total: {total} velas
 {details}
-
-⏰ {format_datetime_br()}"""
+{format_datetime_br()}"""
 
 
 def template_daily_summary(
@@ -434,17 +393,10 @@ def template_daily_summary(
     symbol_display = format_symbol_display(symbol)
     timestamp = format_datetime_br()
 
-    # Format RSI values with ALTA/BAIXA trend
     rsi_1d_fmt = format_rsi_value(rsi_1d)
-    rsi_1d_trend = "📈 ALTA" if rsi_1d > 50 else "📉 BAIXA"
-
     rsi_1w_fmt = format_rsi_value(rsi_1w)
-    rsi_1w_trend = "📈 ALTA" if rsi_1w > 50 else "📉 BAIXA"
-
     rsi_1m_fmt = format_rsi_value(rsi_1m)
-    rsi_1m_trend = "📈 ALTA" if rsi_1m > 50 else "📉 BAIXA"
 
-    # Calculate daily variation
     if price_open > 0:
         variation_pct = ((price_close - price_open) / price_open) * 100
     else:
@@ -452,24 +404,11 @@ def template_daily_summary(
 
     variation_sign = "+" if variation_pct > 0 else "-" if variation_pct < 0 else ""
     variation_formatted = format_percentage_br(abs(variation_pct))
-    price_open_formatted = format_price_br(price_open)
     price_close_formatted = format_price_br(price_close)
 
-    return f"""🌙 RESUMO DIÁRIO - {symbol_display} 📊
-
-📅 {timestamp}
-
-{fear_emoji} Fear & Greed Index
-└─ {fear_greed_value}/100 - {fear_greed_label}
-
-📊 RSI (Múltiplos Timeframes)
-├─ 1D: {rsi_1d_fmt} {rsi_1d_trend}
-├─ 1W: {rsi_1w_fmt} {rsi_1w_trend}
-└─ 1M: {rsi_1m_fmt} {rsi_1m_trend}
-
-💰 Variação do Dia
-└─ {variation_sign}{variation_formatted}
-   Abertura: {price_open_formatted}
-   Fechamento: {price_close_formatted}
-
+    return f"""Resumo Diário - {symbol_display}
+Fear & Greed: {fear_greed_value}/100 ({fear_greed_label})
+RSI: 1D {rsi_1d_fmt} | 1W {rsi_1w_fmt} | 1M {rsi_1m_fmt}
+Preço: {price_close_formatted} ({variation_sign}{variation_formatted})
+{timestamp}
 {ALERT_DISCLAIMER}"""
