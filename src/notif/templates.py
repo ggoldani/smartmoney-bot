@@ -37,7 +37,10 @@ def template_rsi_overbought(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""RSI Sobrecomprado ({timeframe})
-{symbol} {price} | RSI {rsi}
+
+{symbol} {price}
+RSI {rsi}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -56,7 +59,10 @@ def template_rsi_oversold(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""RSI Sobrevendido ({timeframe})
-{symbol} {price} | RSI {rsi}
+
+{symbol} {price}
+RSI {rsi}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -75,7 +81,10 @@ def template_rsi_extreme_overbought(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""RSI EXTREMO Sobrecomprado ({timeframe})
-{symbol} {price} | RSI {rsi}
+
+{symbol} {price}
+RSI {rsi}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -94,7 +103,10 @@ def template_rsi_extreme_oversold(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""RSI EXTREMO Sobrevendido ({timeframe})
-{symbol} {price} | RSI {rsi}
+
+{symbol} {price}
+RSI {rsi}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -123,16 +135,17 @@ def template_rsi_multi_tf(critical_conditions: List[Dict]) -> str:
     for cond in critical_conditions:
         tf = format_timeframe_display(cond["interval"])
         rsi = format_rsi_value(cond["rsi"])
-        emoji = "🔴" if cond["condition"] == "OVERBOUGHT" else "🟢"
         condition_text = "Sobrecomprado" if cond["condition"] == "OVERBOUGHT" else "Sobrevendido"
 
         tf_lines.append(f"{tf}: RSI {rsi} ({condition_text})")
 
-    tf_list = " | ".join(tf_lines)
+    tf_list = "\n".join(tf_lines)
 
     return f"""Múltiplos Timeframes Críticos
+
 {symbol} {price}
 {tf_list}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -158,7 +171,10 @@ def template_breakout_bull(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""Rompimento de Alta ({timeframe})
-{symbol} {price} | Máx anterior: {prev_high} | +{change_pct}
+
+{symbol} {price}
+Máx anterior: {prev_high} | +{change_pct}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -178,7 +194,10 @@ def template_breakout_bear(data: Dict) -> str:
     timestamp = format_datetime_br()
 
     return f"""Rompimento de Baixa ({timeframe})
-{symbol} {price} | Mín anterior: {prev_low} | -{change_pct}
+
+{symbol} {price}
+Mín anterior: {prev_low} | -{change_pct}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -206,7 +225,9 @@ def template_divergence(data: Dict) -> str:
     div_label = "Bullish" if div_type == "BULLISH" else "Bearish"
 
     return f"""Divergência {div_label} ({timeframe})
+
 {symbol} {price} | RSI {rsi}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -223,8 +244,10 @@ def template_circuit_breaker(alert_count: int, conditions: List[str]) -> str:
     conditions_list = " | ".join(conditions)
 
     return f"""Volatilidade Extrema
+
 {alert_count} condições críticas simultâneas
 {conditions_list}
+
 {timestamp}"""
 
 
@@ -236,7 +259,7 @@ def template_mega_alert(alerts: List[Dict]) -> str:
         alerts: List of alert dicts with type, condition, symbol, interval, rsi/price, etc
     """
     timestamp = format_datetime_br()
-    alert_lines = []
+    alert_blocks = []
 
     for alert in alerts:
         if alert['type'] == 'RSI':
@@ -250,15 +273,31 @@ def template_mega_alert(alerts: List[Dict]) -> str:
             else:
                 label = 'RSI' + (' Sobrecomprado' if 'OVERBOUGHT' in alert['condition'] else ' Sobrevendido')
 
-            alert_lines.append(f"{label} ({tf}): {symbol} {price} | RSI {rsi}")
+            alert_blocks.append(f"{label} ({tf}): \n{symbol} {price} | RSI {rsi}")
 
         elif alert['type'] == 'BREAKOUT':
             symbol = format_symbol_display(alert['symbol'])
             tf = format_timeframe_display(alert['interval'])
             price = format_price_br(alert['price'])
-
+            
+            # Get breakout variation data if available
+            prev_high = alert.get('prev_high')
+            prev_low = alert.get('prev_low')
+            change_pct = alert.get('change_pct', 0)
+            
             label = 'Rompimento de Alta' if alert['condition'] == 'BULL' else 'Rompimento de Baixa'
-            alert_lines.append(f"{label} ({tf}): {symbol} {price}")
+            
+            if alert['condition'] == 'BULL' and prev_high is not None:
+                prev_price = format_price_br(prev_high)
+                change_pct_fmt = format_percentage_br(abs(change_pct))
+                sign = "+" if change_pct >= 0 else "-"
+                alert_blocks.append(f"{label} ({tf}): \n{symbol} {price}\nMáx anterior: {prev_price} | {sign}{change_pct_fmt}")
+            elif alert['condition'] == 'BEAR' and prev_low is not None:
+                prev_price = format_price_br(prev_low)
+                change_pct_fmt = format_percentage_br(abs(change_pct))
+                alert_blocks.append(f"{label} ({tf}): \n{symbol} {price}\nMín anterior: {prev_price} | -{change_pct_fmt}")
+            else:
+                alert_blocks.append(f"{label} ({tf}): \n{symbol} {price}")
 
         elif alert['type'] == 'DIVERGENCE':
             symbol = format_symbol_display(alert['symbol'])
@@ -267,12 +306,14 @@ def template_mega_alert(alerts: List[Dict]) -> str:
             rsi = format_rsi_value(alert['rsi'])
 
             div_label = 'Bullish' if alert['condition'] == 'BULLISH' else 'Bearish'
-            alert_lines.append(f"Divergência {div_label} ({tf}): {symbol} {price} | RSI {rsi}")
+            alert_blocks.append(f"Divergência {div_label} ({tf}): \n{symbol} {price} | RSI {rsi}")
 
-    alerts_text = "\n".join(alert_lines)
+    alerts_text = "\n\n".join(alert_blocks)
 
     return f"""Múltiplas Condições Críticas
+
 {alerts_text}
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -405,11 +446,23 @@ def template_daily_summary(
     variation_sign = "+" if variation_pct > 0 else "-" if variation_pct < 0 else ""
     variation_formatted = format_percentage_br(abs(variation_pct))
     price_close_formatted = format_price_br(price_close)
+    
+    # Determine RSI trends
+    rsi_1d_trend = "📈 ALTA" if rsi_1d >= 50 else "📉 BAIXA"
+    rsi_1w_trend = "📈 ALTA" if rsi_1w >= 50 else "📉 BAIXA"
+    rsi_1m_trend = "📈 ALTA" if rsi_1m >= 50 else "📉 BAIXA"
 
     return f"""Resumo Diário - {symbol_display}
+
 Fear & Greed: {fear_greed_value}/100 ({fear_greed_label})
-RSI: 1D {rsi_1d_fmt} | 1W {rsi_1w_fmt} | 1M {rsi_1m_fmt}
+
+RSI:
+1D: {rsi_1d_fmt} {rsi_1d_trend}
+1W: {rsi_1w_fmt} {rsi_1w_trend}
+1M: {rsi_1m_fmt} {rsi_1m_trend}
+
 Preço: {price_close_formatted} ({variation_sign}{variation_formatted})
+
 {timestamp}
 {ALERT_DISCLAIMER}"""
 
@@ -477,11 +530,10 @@ def template_daily_summary_multi(
         
         # Add symbol section
         message_parts.append(f"{symbol_display}")
-        message_parts.append(
-            f"RSI: 1D {rsi_1d_fmt} {rsi_1d_trend} | "
-            f"1W {rsi_1w_fmt} {rsi_1w_trend} | "
-            f"1M {rsi_1m_fmt} {rsi_1m_trend}"
-        )
+        message_parts.append("RSI:")
+        message_parts.append(f"1D: {rsi_1d_fmt} {rsi_1d_trend}")
+        message_parts.append(f"1W: {rsi_1w_fmt} {rsi_1w_trend}")
+        message_parts.append(f"1M: {rsi_1m_fmt} {rsi_1m_trend}")
         message_parts.append(f"Preço: {price_close_formatted} ({variation_sign}{variation_formatted})")
         message_parts.append("")
     
