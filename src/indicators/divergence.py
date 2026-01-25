@@ -40,7 +40,9 @@ def detect_divergence(
     current_rsi: float,
     prev_price: float,
     prev_rsi: float,
-    div_type: str
+    div_type: str,
+    bullish_rsi_max: float = 40,
+    bearish_rsi_min: float = 60
 ) -> Optional[str]:
     """
     Detect divergence between two pivots.
@@ -51,6 +53,8 @@ def detect_divergence(
         prev_price: Price of previous pivot
         prev_rsi: RSI of previous pivot
         div_type: "BULLISH" or "BEARISH"
+        bullish_rsi_max: Maximum RSI value for bullish divergence (default: 40)
+        bearish_rsi_min: Minimum RSI value for bearish divergence (default: 60)
 
     Returns:
         "BULLISH" or "BEARISH" if divergence detected, None otherwise
@@ -58,21 +62,21 @@ def detect_divergence(
     if div_type == "BULLISH":
         # Bullish: Current low < previous low (new minimum)
         # AND current RSI > previous RSI (RSI didn't hit new low)
-        # AND both RSI values < 50
+        # AND both RSI values < bullish_rsi_max
         if (current_price < prev_price and
             current_rsi > prev_rsi and
-            current_rsi < 50 and
-            prev_rsi < 50):
+            current_rsi < bullish_rsi_max and
+            prev_rsi < bullish_rsi_max):
             return "BULLISH"
 
     elif div_type == "BEARISH":
         # Bearish: Current high > previous high (new maximum)
         # AND current RSI < previous RSI (RSI didn't hit new high)
-        # AND both RSI values > 50
+        # AND both RSI values > bearish_rsi_min
         if (current_price > prev_price and
             current_rsi < prev_rsi and
-            current_rsi > 50 and
-            prev_rsi > 50):
+            current_rsi > bearish_rsi_min and
+            prev_rsi > bearish_rsi_min):
             return "BEARISH"
 
     return None

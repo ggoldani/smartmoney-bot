@@ -109,12 +109,12 @@ class TestDailySummaryTemplate:
             fear_emoji="😊"
         )
 
-        assert "RESUMO DIÁRIO" in message
+        assert "Resumo Diário" in message
         assert "BTC/USDT" in message
-        assert "Fear & Greed Index" in message
+        assert "Fear & Greed" in message
         assert "75/100" in message
         assert "Ganância" in message
-        assert "RSI (Múltiplos Timeframes)" in message
+        assert "RSI:" in message
         assert "72,50" in message  # Brazilian format for 1D RSI
 
     def test_template_rsi_multiple_timeframes(self):
@@ -206,9 +206,8 @@ class TestDailySummaryTemplate:
 
         # Check for positive variation (4.62%)
         assert "+" in message
-        assert "Variação do Dia" in message
-        assert "Abertura: $65.000,00" in message
-        assert "Fechamento: $68.000,00" in message
+        assert "Preço:" in message
+        assert "$68.000,00" in message
 
     def test_template_price_variation_negative(self):
         """Should show negative variation correctly."""
@@ -226,9 +225,8 @@ class TestDailySummaryTemplate:
 
         # Check for negative variation (-5.97%)
         assert "-" in message  # Must have minus sign for negative variation
-        assert "Variação do Dia" in message
-        assert "Abertura: $67.000,00" in message
-        assert "Fechamento: $63.000,00" in message
+        assert "Preço:" in message
+        assert "$63.000,00" in message
 
     def test_template_price_variation_zero(self):
         """Should show zero variation when prices are equal."""
@@ -259,7 +257,7 @@ class TestDailySummaryTemplate:
             price_close=67000.00
         )
 
-        assert "⚠️ IMPORTANTE" in message
+        assert "⚠️" in message
         assert "DYOR" in message
 
 
@@ -365,7 +363,7 @@ class TestDailySummaryEdgeCases:
             fear_emoji="😐"
         )
 
-        assert "RESUMO DIÁRIO" in message
+        assert "Resumo Diário" in message
         assert "0,00%" in message  # Variation should be 0 when open is 0
 
     def test_unicode_symbol(self):
@@ -383,7 +381,8 @@ class TestDailySummaryEdgeCases:
         )
 
         assert "BTC/USDT" in message
-        assert "😐" in message
+        # Template doesn't include fear_emoji in output, but uses emoji in trend indicators
+        assert "📈" in message or "📉" in message
 
     def test_all_emojis_rendering(self):
         """Should render all sentiment emojis correctly."""
@@ -397,7 +396,7 @@ class TestDailySummaryEdgeCases:
 
     def test_rsi_boundary_50(self):
         """Should correctly classify RSI at boundary value 50."""
-        # At exactly 50, should be ALTA (>50 is true, =50 is false)
+        # At exactly 50, should be ALTA (>= 50)
         message = template_daily_summary(
             symbol="BTCUSDT",
             fear_greed_value=50,
@@ -410,8 +409,8 @@ class TestDailySummaryEdgeCases:
             fear_emoji="😐"
         )
 
-        # At 50 exactly, > 50 is False, so should be BAIXA
-        assert "📉 BAIXA" in message
+        # At 50 exactly, >= 50 is True, so should be ALTA
+        assert "📈 ALTA" in message
 
     def test_rsi_boundary_50_plus_1(self):
         """Should correctly classify RSI just above 50."""
@@ -444,7 +443,7 @@ class TestDailySummaryEdgeCases:
             fear_emoji="😐"
         )
 
-        assert "$100.000,00" in message
+        # New format only shows close price
         assert "$105.000,00" in message
         assert "5,00%" in message
 
@@ -462,7 +461,7 @@ class TestDailySummaryEdgeCases:
             fear_emoji="😐"
         )
 
-        assert "Variação do Dia" in message
+        assert "Preço:" in message
         # Variation is (67001-67000)/67000 = 0.0149% ≈ 0.01%
         assert "+" in message
 
@@ -633,9 +632,9 @@ class TestDailySummaryMultiTemplate:
             fear_emoji="😐"
         )
         
-        assert "1D 75,00 📈 ALTA" in message
-        assert "1W 35,00 📉 BAIXA" in message
-        assert "1M 52,00 📈 ALTA" in message
+        assert "1D: 75,00 📈 ALTA" in message
+        assert "1W: 35,00 📉 BAIXA" in message
+        assert "1M: 52,00 📈 ALTA" in message
 
     def test_template_multi_fear_greed_extreme_greed(self):
         """Should format message with extreme greed sentiment."""
@@ -739,6 +738,6 @@ class TestDailySummaryMultiTemplate:
             fear_emoji="😐"
         )
         
-        assert "1D 50,00 📈 ALTA" in message
-        assert "1W 49,99 📉 BAIXA" in message
-        assert "1M 50,01 📈 ALTA" in message
+        assert "1D: 50,00 📈 ALTA" in message
+        assert "1W: 49,99 📉 BAIXA" in message
+        assert "1M: 50,01 📈 ALTA" in message

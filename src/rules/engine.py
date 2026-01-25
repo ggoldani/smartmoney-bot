@@ -299,6 +299,10 @@ class AlertEngine:
             three_rsi = rsi_values[-3:]
 
             debug_enabled = divergence_config.get('debug_divergence', False)
+            
+            # Get RSI thresholds from config
+            bullish_rsi_max = divergence_config.get('bullish_rsi_max', 40)
+            bearish_rsi_min = divergence_config.get('bearish_rsi_min', 60)
 
             if three_rsi[1] is None:
                 if debug_enabled:
@@ -321,7 +325,8 @@ class AlertEngine:
                         current_rsi=current_rsi,
                         prev_price=prev_bullish["price"],
                         prev_rsi=prev_bullish["rsi"],
-                        div_type="BULLISH"
+                        div_type="BULLISH",
+                        bullish_rsi_max=bullish_rsi_max
                     ):
                         # CRITICAL (Risco 2): alert_key uses open_time of CURRENT candle (hora do alerta)
                         alert_key = f"{symbol}_{interval}_{open_time}_DIVERGENCE_BULLISH"
@@ -362,7 +367,8 @@ class AlertEngine:
                         current_rsi=current_rsi,
                         prev_price=prev_bearish["price"],
                         prev_rsi=prev_bearish["rsi"],
-                        div_type="BEARISH"
+                        div_type="BEARISH",
+                        bearish_rsi_min=bearish_rsi_min
                     ):
                         # CRITICAL (Risco 2): alert_key uses open_time of CURRENT candle (hora do alerta)
                         alert_key = f"{symbol}_{interval}_{open_time}_DIVERGENCE_BEARISH"

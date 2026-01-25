@@ -16,6 +16,9 @@ telegram:
 symbols:
   - name: "BTCUSDT"
     timeframes: ["1h", "4h", "1d", "1w", "1M"]
+  - name : "PAXGUSDT"
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+
 
 # Historical data backfill on startup
 backfill:
@@ -32,15 +35,15 @@ indicators:
     oversold: 30
     # Extreme thresholds (detect market extremes: >=75 overbought, <=25 oversold)
     # These generate higher-priority alerts (🚨🔴 vs 🔴)
-    extreme_overbought: 75
-    extreme_oversold: 25
+    extreme_overbought: 77
+    extreme_oversold: 23
     # Recovery zone: RSI values that reset alert state (prevents spam on reversals)
     # When RSI enters this zone, state is reset allowing new alerts on next condition change
     recovery_zone:
-      lower: 35   # Lower bound: RSI must cross above this to reset oversold state
-      upper: 65   # Upper bound: RSI must cross below this to reset overbought state
+      lower: 40   # Lower bound: RSI must cross above this to reset oversold state
+      upper: 60   # Upper bound: RSI must cross below this to reset overbought state
     # Timeframes to calculate RSI for (subset of symbol timeframes)
-    timeframes: ["1h", "4h", "1d"]
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
     # Alert when RSI touches threshold (during candle, not only on close)
     # This catches extreme moments even if candle recovers before closing
     alert_on_touch: true
@@ -48,20 +51,23 @@ indicators:
   breakout:
     enabled: true
     # Only monitor breakouts on daily and weekly
-    timeframes: ["1d", "1w"]
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
     # Margin to avoid false positives (0.1% = 0.001)
-    margin_percent: 0.1
+    margin_percent: 0.15
     # Alert immediately when price touches level (not on close)
     alert_on_touch: true
 
   divergence:
     enabled: true
     # Timeframes to detect RSI divergence (bullish/bearish pivots)
-    timeframes: ["1h", "4h", "1d", "1w"]
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
     # Number of candles to scan on startup
-    lookback: 20
+    lookback: 40
     # Enable verbose logging for divergence detection
     debug_divergence: false
+    # RSI thresholds for divergence detection
+    bullish_rsi_max: 40   # Divergencia bullish apenas se RSI < 40
+    bearish_rsi_min: 60   # Divergencia bearish apenas se RSI > 60
 
 # Alert configuration
 alerts:
@@ -89,7 +95,7 @@ alerts:
   daily_summary:
     enabled: true
     # Time to send summary in BRT (21:01 BRT = 1 minute after candle closes)
-    send_time_brt: "21:01"
+    send_time_brt: "21:05"
     # Tolerance window in minutes (allows summary to send within ±N minutes of scheduled time)
     send_window_minutes: 1
 

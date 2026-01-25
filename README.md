@@ -1,8 +1,8 @@
 # SmartMoney Bot
 
-Telegram alert bot para trading de criptomoedas (BTCUSDT). Alertas RSI (Wilder's, período 14) + breakouts + **divergência RSI** (pivots bullish/bearish) + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
+Telegram alert bot para trading de criptomoedas (**multi-symbol**: BTCUSDT, PAXGUSDT, etc). Alertas RSI (Wilder's, período 14) + breakouts + **divergência RSI** (pivots bullish/bearish com thresholds configuráveis) + resumo diário Fear & Greed em múltiplos timeframes com formatação brasileira (BRT, números em padrão brasileiro).
 
-**Status:** v2.3.1 - Sprint 4 + Daily Summary fixes ✅ | Tier: FREE
+**Status:** v2.4.0 - Multi-symbol + Divergence thresholds ✅ | Tier: FREE
 
 ---
 
@@ -32,27 +32,28 @@ docker-compose up -d
 
 | Sprint | Feature | Detalhes |
 |--------|---------|----------|
-| **1** ✅ | RSI Alerts | Período 14, >70 (🔴) e <30 (🟢) em 1h, 4h, 1d - real-time |
-| **1** ✅ | Breakout Alerts | Rompimento alto+0.1% (🚀) / baixo-0.1% (📉) em 1d, 1w - real-time |
+| **1** ✅ | RSI Alerts | Período 14, >70 (🔴) e <30 (🟢) em 1h, 4h, 1d, 1w, 1M - real-time |
+| **1** ✅ | Breakout Alerts | Rompimento alto+0.15% (🚀) / baixo-0.15% (📉) em 1h, 4h, 1d, 1w, 1M - real-time |
 | **1** ✅ | Real-time Data | Binance WebSocket com auto-reconnect (exponential backoff, watchdog 90s) |
 | **1** ✅ | Backfill | 200 candles/timeframe ao iniciar via REST API |
 | **1** ✅ | Throttling | Max 20 alertas/hora, circuit breaker 5/min → consolidação |
 | **1** ✅ | Multi-TF | Mega-alert (🚨) quando 2+ TFs críticos simultaneamente |
 | **1** ✅ | Admin Channel | Logs de erro separados + stack traces |
 | **1** ✅ | Docker Ready | Resource limits (256MB RAM, 0.5 CPU), non-root user |
-| **2** ✅ | RSI Extremo | Níveis adicionais >75 (🔴🔴) / <25 (🟢🟢) |
-| **2** ✅ | Anti-Spam | Recovery zones previnem alerts repetitivos na mesma condição |
+| **2** ✅ | RSI Extremo | Níveis adicionais ≥77 (🔴🔴) / ≤23 (🟢🟢) - configuráveis |
+| **2** ✅ | Anti-Spam | Recovery zones (40-60) previnem alerts repetitivos na mesma condição |
 | **2** ✅ | DB Cleanup | APScheduler cronjob (daily 3AM UTC, 90-day retention, min 200 candles/TF) |
 | **2** ✅ | Healthcheck | HTTP endpoints `/health` e `/status` porta 8080 |
 | **2** ✅ | Deploy Auto | Script completo (`scripts/deploy.sh`) com UFW + Fail2Ban + systemd sandbox |
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
-| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:01 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior (FIXED: 1M data, closed candles, convergence)** |
+| **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:05 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior** |
 | **3** ✅ | **Fear & Greed API** | **CoinMarketCap API v3 (`value`/`value_classification`) + exponential backoff (2s-4s-8s)** |
 | **4** ✅ | **RSI Divergence** | **3-candle pivots (bullish=lowest, bearish=highest) + RSI confirmation (price↔RSI diverge) + 2-pivot alert** |
-| **4** ✅ | **Divergence Config** | **Timeframes (4h, 1d, 1w), lookback (20 candles), debug mode, estado persiste entre restarts** |
-| **5** 🔜 | Multi-symbol | ETHUSDT, BNBUSDT, etc (configs/premium.yaml) |
-| **5** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
-| **5** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
+| **4** ✅ | **Divergence Config** | **Timeframes, lookback (40 candles), thresholds configuráveis (bullish <40, bearish >60)** |
+| **5** ✅ | **Multi-symbol** | **BTCUSDT, PAXGUSDT, etc - adicionar símbolos em `configs/free.yaml`** |
+| **5** ✅ | **Daily Summary Multi** | **Resumo consolidado para todos os símbolos trackeados** |
+| **6** 🔜 | BTC Dominance | Alertas quando BTC.D cruza níveis chave |
+| **6** 🔜 | Custom Alerts | Admin pode enviar mensagens customizadas via Telegram |
 
 ---
 
@@ -80,28 +81,43 @@ docker-compose up -d
 ```yaml
 bot:
   tier: "free"
-  version: "2.1.0"
+  version: "1.0.0"
+  name: "SmartMoney Free Bot"
 
+# Símbolos monitorados (adicione quantos quiser)
 symbols:
   - name: "BTCUSDT"
-    timeframes: ["1h", "4h", "1d", "1w"]
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+  - name: "PAXGUSDT"
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
 
 indicators:
   rsi:
+    enabled: true
     period: 14
-    overbought: 70          # Ajustar aqui
-    oversold: 30            # Ajustar aqui
-    timeframes: ["1h", "4h", "1d"]
+    overbought: 70
+    oversold: 30
+    extreme_overbought: 77      # RSI extremo sobrecomprado
+    extreme_oversold: 23        # RSI extremo sobrevendido
+    recovery_zone:
+      lower: 40                 # Reset estado oversold
+      upper: 60                 # Reset estado overbought
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    alert_on_touch: true        # Alertar durante candle (não só fechamento)
 
   breakout:
-    timeframes: ["1d", "1w"]
-    margin_percent: 0.1     # 0.1% threshold
+    enabled: true
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    margin_percent: 0.15        # 0.15% threshold
+    alert_on_touch: true
 
   divergence:
-    enabled: true                       # RSI divergence detection
-    timeframes: ["4h", "1d", "1w"]      # Timeframes to monitor
-    lookback: 20                        # Candles to scan on startup
-    debug_divergence: false             # Verbose logging (pivots detected)
+    enabled: true
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    lookback: 40                        # Candles para buscar pivots
+    debug_divergence: false             # Verbose logging
+    bullish_rsi_max: 40                 # Divergência bullish: RSI < 40
+    bearish_rsi_min: 60                 # Divergência bearish: RSI > 60
 
 alerts:
   timezone: "America/Sao_Paulo"
@@ -110,12 +126,36 @@ alerts:
   circuit_breaker:
     max_alerts_per_minute: 5
 
-  # Daily Summary: Resumo Fear & Greed Index @ 21:01 BRT (00:01 UTC)
   daily_summary:
-    enabled: true                    # Set false para desabilitar
-    send_time_brt: "21:01"          # HH:MM (BRT timezone, 1min após candle fechar)
-    send_window_minutes: 1          # Tolerância em minutos (±1min)
+    enabled: true
+    send_time_brt: "21:05"              # HH:MM (BRT, 5min após candle fechar)
+    send_window_minutes: 1
 ```
+
+---
+
+## ➕ Adicionar Novos Símbolos
+
+Para monitorar novos tokens (ex: ETHUSDT, SOLUSDT):
+
+```yaml
+# configs/free.yaml
+symbols:
+  - name: "BTCUSDT"
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+  - name: "PAXGUSDT"
+    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+  - name: "ETHUSDT"           # Novo símbolo
+    timeframes: ["1h", "4h", "1d", "1w"]  # Timeframes customizados
+```
+
+**Após adicionar:**
+1. Reiniciar o bot
+2. Backfill automático para o novo símbolo (200 candles/TF)
+3. WebSocket inclui o novo símbolo automaticamente
+4. Daily Summary incluirá dados do novo símbolo
+
+**Nota:** O símbolo deve existir na Binance (USDT pairs).
 
 ---
 
@@ -182,10 +222,12 @@ tail -f logs/bot.log                                # Real-time
 grep "Alert sent" logs/bot.log                      # Alertas enviados
 grep "Daily summary" logs/bot.log                   # Resumo diário (task execution)
 grep "Fear & Greed" logs/bot.log                    # Fear & Greed API calls/retries
-grep "Fear & Greed Index fetched" logs/bot.log      # Fear & Greed valor recebido
 grep "ERROR" logs/bot.log                           # Erros
 grep "Throttled" logs/bot.log                       # Throttling ativo
 grep "RSI analysis" logs/bot.log                    # Cálculos RSI
+grep "BTCUSDT" logs/bot.log                         # Logs de símbolo específico
+grep "PAXGUSDT" logs/bot.log                        # Logs de outro símbolo
+grep "divergence" logs/bot.log                      # Detecção de divergências
 ```
 
 ### Database
@@ -238,13 +280,13 @@ src/
     └── timeframes.py    # TF utilities
 
 configs/
-└── free.yaml            # Configuration (also: premium.yaml future)
+└── free.yaml            # Configuration (multi-symbol, thresholds, timeframes)
 ```
 
 **Data Flow:**
-- **Real-time Alerts:** Binance WS → Candles → SQLite → Alert Engine (5s loop) → Indicators (RSI, Breakout, Divergence) → Rules → Throttle → Telegram
-- **Divergence:** 3-candle pivot detection → Compare with previous pivot → RSI confirmation → Direct alert (🔼/🔽, no consolidation)
-- **Daily Summary:** Scheduled task (21:01 BRT) → Fetch Fear & Greed API → Get RSI 1D/1W/1M + previous day candle → Format → Telegram
+- **Real-time Alerts:** Binance WS (multi-symbol streams) → Candles → SQLite → Alert Engine (5s loop) → Indicators (RSI, Breakout, Divergence) → Rules → Throttle → Telegram
+- **Divergence:** 3-candle pivot detection → Compare with previous pivot → RSI confirmation (thresholds configuráveis) → Direct alert (🔼/🔽, no consolidation)
+- **Daily Summary:** Scheduled task (21:05 BRT) → Fetch Fear & Greed API → For each symbol: Get RSI 1D/1W/1M + previous day candle → Format multi-symbol → Telegram
 
 ---
 
@@ -252,23 +294,23 @@ configs/
 
 ### RSI
 - **Cálculo:** Wilder's smoothing, período 14
-- **Trigger:** Real-time (não aguarda fechamento)
+- **Trigger:** Real-time (não aguarda fechamento, `alert_on_touch: true`)
 - **Normal:** >70 (🔴 overbought), <30 (🟢 oversold)
-- **Extremo:** >75 (🔴🔴), <25 (🟢🟢)
-- **TFs:** 1h, 4h, 1d
+- **Extremo:** ≥77 (🔴🔴), ≤23 (🟢🟢) - configuráveis via YAML
+- **TFs:** 1h, 4h, 1d, 1w, 1M (todos configuráveis)
 - **Escalação & Bloqueio:**
   - ✅ Permite: OVERSOLD → EXTREME_OVERSOLD (escalação de severidade)
   - ✅ Permite: OVERBOUGHT → EXTREME_OVERBOUGHT (escalação de severidade)
   - ❌ Bloqueia: EXTREME → OVERSOLD/OVERBOUGHT (redução de severidade)
   - ❌ Bloqueia: EXTREME → EXTREME (mesmo nível)
-  - ✅ Reset: Apenas quando RSI entra na recovery zone (35 < RSI < 65)
+  - ✅ Reset: Apenas quando RSI entra na recovery zone (40 < RSI < 60, configurável)
   - **Comportamento:** Uma vez em OVERSOLD/OVERBOUGHT, não há novo alerta até voltar à recovery zone (impede re-alertas)
 
 ### Breakouts
-- **Detecção:** Real-time (não aguarda fechamento)
-- **Bull:** Price > previous_high + 0.1% (🚀)
-- **Bear:** Price < previous_low - 0.1% (📉)
-- **TFs:** 1d, 1w
+- **Detecção:** Real-time (não aguarda fechamento, `alert_on_touch: true`)
+- **Bull:** Price > previous_high + 0.15% (🚀)
+- **Bear:** Price < previous_low - 0.15% (📉)
+- **TFs:** 1h, 4h, 1d, 1w, 1M (configuráveis)
 - **Anti-spam:** Não reseta durante candle aberto (previne múltiplos alertas por oscilação)
   - Preço oscila dentro/fora do range → sem novo alerta
   - **Reset:** Apenas quando novo candle começa (permite novo sinal)
@@ -279,12 +321,14 @@ configs/
   - **Bullish:** Middle candle é lowest low (fundo)
   - **Bearish:** Middle candle é highest high (topo)
 - **Confirmação:** Comparar com pivô anterior
-  - **BULLISH:** price↓ mas RSI↑ (ambos <50) = compra potencial (🔼)
-  - **BEARISH:** price↑ mas RSI↓ (ambos >50) = venda potencial (🔽)
-- **TFs:** 4h, 1d, 1w (independentes)
+  - **BULLISH:** price↓ mas RSI↑ (ambos < `bullish_rsi_max`, default 40) = compra potencial (🔼)
+  - **BEARISH:** price↑ mas RSI↓ (ambos > `bearish_rsi_min`, default 60) = venda potencial (🔽)
+- **TFs:** 1h, 4h, 1d, 1w, 1M (configuráveis, independentes)
+- **Thresholds:** Configuráveis via YAML (`bullish_rsi_max: 40`, `bearish_rsi_min: 60`)
+- **Lookback:** 40 candles para buscar pivots anteriores
 - **Alerta:** Requer 2 pivots (estado persiste entre restarts)
 - **Janela:** Sem consolidação (direto para Telegram, impactante)
-- **Exemplo:** 1d cai para novo low mas RSI sobe = divergência bullish 1 alerta
+- **Exemplo:** 1d cai para novo low mas RSI sobe (ambos <40) = divergência bullish
 
 ### Consolidação de Alertas
 - **Janela:** 6 segundos (cobre 2 ciclos de check de 5s)
@@ -302,14 +346,16 @@ configs/
 - **Implementação:** `last_condition` marcado em `_collect_single_alert()` (não espera envio) + `_get_rsi_severity()` para comparação
 
 ### Resumo Diário (Daily Summary)
-- **Horário:** 21:01 BRT (00:01 UTC próximo dia) - 1min após candle fechar
-- **Conteúdo:**
+- **Horário:** 21:05 BRT (00:05 UTC próximo dia) - 5min após candle fechar
+- **Multi-symbol:** Resumo consolidado para TODOS os símbolos configurados em `free.yaml`
+- **Conteúdo por símbolo:**
   - 😱 Fear & Greed Index (0-100, CoinMarketCap API v3 - `value`/`value_classification`)
   - 📊 RSI múltiplos timeframes:
-    - 1D: `RSI > 50 → 📈 ALTA`, `RSI < 50 → 📉 BAIXA`
+    - 1D: `RSI ≥ 50 → 📈 ALTA`, `RSI < 50 → 📉 BAIXA`
     - 1W: mesmo padrão
     - 1M: mesmo padrão
   - 💰 Variação diária: `(candle_anterior.close - candle_anterior.open) / candle_anterior.open × 100%`
+- **Template:** Formato limpo com cada símbolo separado, RSI em linhas individuais
 - **Retry:** Exponential backoff se API falhar (2s → 4s → 8s)
 - **Janela:** ±1 minuto para envio (tolerância)
 - **Config:** Ativar/desativar em `free.yaml` → `alerts.daily_summary.enabled`
@@ -327,7 +373,7 @@ configs/
 
 | Componente | Versão | Propósito |
 |------------|--------|----------|
-| Python | 3.13 | Linguagem |
+| Python | 3.13+ | Linguagem (testado até 3.14) |
 | python-telegram-bot | 21.6 | Telegram API |
 | pandas | ≥2.2.3 | Data analysis |
 | SQLAlchemy | 2.0.32 | ORM |
@@ -340,17 +386,22 @@ configs/
 
 ---
 
-## 🔧 Últimas Correções (Dez 2025)
+## 🔧 Últimas Correções (Jan 2026)
 
-**RSI Alert Duplicate Prevention:**
+**v2.4.0 - Multi-symbol + Divergence Thresholds:**
+- **Multi-symbol:** Suporte a múltiplos símbolos (BTCUSDT, PAXGUSDT, etc) via `free.yaml`
+- **WebSocket:** Stream combinado para todos os símbolos configurados
+- **Daily Summary Multi:** Resumo consolidado para todos os símbolos em uma mensagem
+- **Divergence Thresholds:** RSI thresholds configuráveis (`bullish_rsi_max: 40`, `bearish_rsi_min: 60`)
+- **Templates:** Formatação melhorada com espaçamento e clareza
+
+**v2.3.x - RSI Alert Duplicate Prevention:**
 - **Problema:** Múltiplos alertas RSI idênticos sendo enviados no mesmo candle
-- **Causa:** `last_condition` era atualizado apenas após envio bem-sucedido (engine.py:920), não na coleta
-- **Solução #1:** Marcar `last_condition` imediatamente em `_collect_single_alert()` (engine.py:583) para bloqueio imediato de duplicatas
-- **Solução #2:** Implementar lógica de severidade em `_is_repeated_condition()` (engine.py:545-581):
+- **Solução #1:** Marcar `last_condition` imediatamente em `_collect_single_alert()` para bloqueio imediato de duplicatas
+- **Solução #2:** Implementar lógica de severidade:
   - ✅ Permite escalação: OVERSOLD(1) → EXTREME_OVERSOLD(2)
   - ❌ Bloqueia redução: EXTREME_OVERSOLD(2) → OVERSOLD(1)
-  - ❌ Bloqueia mesmo nível: EXTREME(2) → EXTREME(2)
-  - Reset: Apenas quando RSI volta à recovery zone (35-65)
+  - Reset: Apenas quando RSI volta à recovery zone (40-60)
 - **Resultado:** Fluxo correto de alertas sem duplicatas, com escalação permitida
 
 ---
@@ -372,9 +423,10 @@ configs/
 | **Daily Summary não aparece** | **Task desabilitado, horário passou, ou API key inválida** | **Verificar: `grep "Daily summary" logs/bot.log` + `free.yaml` → `enabled: true` + `COINMARKETCAP_API_KEY` em `.env`** |
 | **Fear & Greed mostra "Indisponível"** | **API key ausente/inválida ou CoinMarketCap down** | **Verificar: `COINMARKETCAP_API_KEY` em `.env`, `grep "Fear & Greed" logs/bot.log` para retry attempts** |
 | **RSI não mostra no Daily Summary** | Dados insuficientes ou candle anterior não existe | Esperar 1-2 dias para dados acumularem, verificar `grep "RSI analysis" logs/bot.log` |
-| **Divergências não alertam** | Feature desabilitada ou sem pivots detectados | Verificar `free.yaml` → `indicators.divergence.enabled: true`, habilitar `debug_divergence: true` para logs, `grep "divergence_state" logs/bot.log` |
+| **Divergências não alertam** | Feature desabilitada, sem pivots, ou RSI fora do threshold | Verificar `free.yaml` → `divergence.enabled: true`, RSI deve estar < `bullish_rsi_max` (40) para bullish ou > `bearish_rsi_min` (60) para bearish, habilitar `debug_divergence: true` para logs |
+| **Divergência com thresholds diferentes** | Valores 50 eram hardcoded, agora configuráveis | Ajustar `bullish_rsi_max` e `bearish_rsi_min` em `free.yaml` (default: 40 e 60) |
 | **Divergência re-alerta** | Comportamento esperado (precisa de 2 pivots) | BULLISH/BEARISH requer comparação entre pivots, cada novo pivô pode gerar novo alerta se confirmado |
-| **Estado divergence perdido** | Estado não persiste entre restarts | Verificar logs de `_initialize_divergence_state()`, `grep "Divergence state initialized" logs/bot.log` |
+| **Novo símbolo não aparece** | Símbolo não adicionado ao YAML | Adicionar em `free.yaml` → `symbols:` com nome e timeframes, reiniciar bot |
 | ModuleNotFoundError: No module named 'src' | PYTHONPATH não definido (Docker) | Adicionar `PYTHONPATH=/app` no docker-compose.yml environment |
 | unable to open database file | Filesystem read-only ou sem permissões | Remover `read_only: true` do docker-compose.yml, garantir `/data` volume com permissões 755 |
 | Bot não manda msg no Telegram | BOT_TOKEN inválido ou ausente em .env | Verificar: `cat .env \| grep BOT_TOKEN`, token deve vir exato do @BotFather, sem espaços |
@@ -391,11 +443,11 @@ PYTHONPATH=. python src/main.py --dry-run
 
 # 2. Run all tests (including divergence)
 PYTHONPATH=. pytest tests/ -v
-# Expect: All tests passing (including test_divergence.py: 40 tests)
+# Expect: All tests passing (268 tests including divergence with configurable thresholds)
 
 # 3. Database
 sqlite3 data.db "SELECT COUNT(*) FROM candles;"
-# Expect: 800 (200 candles × 4 timeframes)
+# Expect: 2000 (200 candles × 5 timeframes × 2 symbols)
 
 # 4. Telegram connectivity
 curl https://api.telegram.org/bot$BOT_TOKEN/getMe
