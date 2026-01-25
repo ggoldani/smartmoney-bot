@@ -8,6 +8,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.mypy_cache/
 
 # Virtual Environments
 .venv/
@@ -31,11 +32,13 @@ logs/
 *.log
 bot.log
 
+# Process files
+*.pid
+
 # IDE
 .DS_Store
 .idea/
 .vscode/
-.claude
 *.swp
 *.swo
 *~
@@ -53,6 +56,7 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+*.bak
 
-CLAUDE.md
+# Project-specific
 audit-cursor.md

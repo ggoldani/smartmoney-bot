@@ -1,0 +1,57 @@
+---
+description: Padrões de código e testes
+globs: ["**/*.py"]
+alwaysApply: false
+---
+
+# Padrões de Código
+
+## Python Style
+
+- **Python 3.13+** com async/await
+- **Type hints** obrigatórios em todas funções
+- **Docstrings** em inglês (Google style)
+- **Naming:** snake_case para variáveis/funções, PascalCase para classes
+
+## Regras Obrigatórias
+
+✅ **DO:**
+- `async/await` para todas operações I/O
+- `loguru` para logging (nunca `print()`)
+- `SQLAlchemy ORM` para banco (nunca raw SQL)
+- Valores em `configs/free.yaml` (nunca hardcode)
+- Texto PT-BR para templates/alertas ao usuário
+- Inglês para código/comments/docstrings
+
+❌ **DON'T:**
+- I/O síncrono em funções async
+- `print()` statements
+- Raw SQL queries
+- Hardcode de valores
+- `eval()` ou `exec()`
+- Commit `.env` com secrets
+
+## Testes
+
+- Framework: **pytest**
+- Coverage mínimo: **90%**
+- Executar antes de commit: `PYTHONPATH=. pytest tests/ -v`
+
+```bash
+# Todos os testes
+PYTHONPATH=. pytest tests/ -v
+
+# Com coverage
+PYTHONPATH=. pytest --cov=src tests/
+
+# Módulo específico
+PYTHONPATH=. pytest tests/test_divergence.py -v
+```
+
+## Quality Checks
+
+```bash
+black src/ tests/    # Format
+mypy src/            # Type check
+flake8 src/          # Lint
+```

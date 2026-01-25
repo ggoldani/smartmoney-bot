@@ -1,0 +1,66 @@
+---
+description: Contexto do projeto SmartMoney Bot
+globs: 
+alwaysApply: true
+---
+
+# SmartMoney Bot
+
+Bot Telegram de alertas crypto (multi-symbol: BTCUSDT, PAXGUSDT, etc).
+
+## Stack
+
+| Tech | Uso |
+|------|-----|
+| Python 3.13+ | async/await |
+| SQLite | SQLAlchemy ORM |
+| Binance WS | Multi-symbol streams |
+| Telegram | python-telegram-bot 21.x |
+| APScheduler | Cron tasks |
+| loguru | Async logging |
+| pytest | 268 tests, 95%+ cov |
+
+## Arquitetura
+
+```
+src/
+├── main.py           # Startup → backfill → WS → alerts → shutdown
+├── config.py         # YAML loader + validation
+├── telegram_bot.py   # Telegram API wrapper
+├── datafeeds/        # Binance WS/REST, Fear & Greed API
+├── indicators/       # RSI, Breakouts, Divergence
+├── rules/engine.py   # Alert engine (5s loop) + daily summary
+├── notif/            # Templates PT-BR, throttling, formatting
+├── storage/          # SQLAlchemy models, indexed queries
+└── utils/            # Logging, healthcheck, timeframes
+```
+
+## Arquivos Importantes
+
+| Arquivo | Propósito |
+|---------|-----------|
+| `configs/free.yaml` | Todas configurações (RSI, breakouts, divergence, alerts) |
+| `.env` | Secrets (BOT_TOKEN, CHANNEL_CHAT_ID, API keys) |
+| `CLAUDE.md` | Guia para Claude Code |
+| `README.md` | Setup, deploy, troubleshooting |
+| `src/CLAUDE.md` | Arquitetura detalhada |
+
+## Comandos Rápidos
+
+```bash
+# Run
+PYTHONPATH=. python src/main.py --dry-run  # Test (sem Telegram)
+PYTHONPATH=. python src/main.py            # Production
+
+# Tests
+PYTHONPATH=. pytest tests/ -v
+
+# Monitor
+tail -f logs/bot.log | grep "ERROR\|Alert\|DIVERGENCE"
+```
+
+## Tarefas Comuns
+
+- **Add Symbol:** `configs/free.yaml` → `symbols:` → restart
+- **Modify Thresholds:** `configs/free.yaml` → `indicators:` → restart
+- **Debug Mode:** `LOG_LEVEL=DEBUG PYTHONPATH=. python src/main.py --dry-run`
