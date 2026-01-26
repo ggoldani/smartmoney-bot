@@ -1,5 +1,5 @@
-"""RSI Divergence detection (bullish/bearish) - detects 2 pivots (lows/highs)."""
-from typing import Optional, List
+"""RSI Divergence detection (bullish/bearish) - detects 2 pivots (price low/high + RSI confirmation)."""
+from typing import Optional, List, Tuple
 from loguru import logger
 
 
@@ -35,6 +35,59 @@ def is_bearish_pivot(candles: List) -> bool:
     return candles[1].high > candles[0].high and candles[1].high > candles[2].high
 
 
+def get_rsi_pivot(
+    candles: List,
+    rsi_values: List[Optional[float]],
+    pivot_type: str
+) -> Optional[Tuple[float, float]]:
+    """
+    Determine RSI pivot point for a price pivot (C2).
+    
+    For a price pivot at C2, determines which candle (C1 or C2) has the RSI extreme.
+    Returns (close_price, rsi_value) if valid pivot found, None otherwise.
+    
+    Args:
+        candles: List of 3 consecutive Candle ORM objects (oldest first)
+        rsi_values: List of RSI values corresponding to candles (oldest first)
+        pivot_type: "BULLISH" or "BEARISH"
+    
+    Returns:
+        Tuple (close_price, rsi_value) if valid RSI pivot found, None otherwise
+    """
+    if len(candles) != 3 or len(rsi_values) != 3:
+        return None
+    
+    rsi0, rsi1, rsi2 = rsi_values[0], rsi_values[1], rsi_values[2]
+    
+    # All RSI values must be available
+    if rsi0 is None or rsi1 is None or rsi2 is None:
+        return None
+    
+    if pivot_type == "BULLISH":
+        # For bullish pivot (lowest low at C2), RSI pivot should be lowest
+        # Check if C2 has lowest RSI
+        if rsi1 <= rsi0 and rsi1 <= rsi2:
+            return (candles[1].close, rsi1)
+        # Check if C1 has lowest RSI (candle 2 was reversal)
+        elif rsi0 < rsi1 and rsi0 <= rsi2:
+            return (candles[0].close, rsi0)
+        # No valid RSI pivot
+        return None
+    
+    elif pivot_type == "BEARISH":
+        # For bearish pivot (highest high at C2), RSI pivot should be highest
+        # Check if C2 has highest RSI
+        if rsi1 >= rsi0 and rsi1 >= rsi2:
+            return (candles[1].close, rsi1)
+        # Check if C1 has highest RSI (candle 2 was reversal)
+        elif rsi0 > rsi1 and rsi0 >= rsi2:
+            return (candles[0].close, rsi0)
+        # No valid RSI pivot
+        return None
+    
+    return None
+
+
 def detect_divergence(
     current_price: float,
     current_rsi: float,
@@ -48,9 +101,9 @@ def detect_divergence(
     Detect divergence between two pivots.
 
     Args:
-        current_price: Price of current pivot (low for bullish, high for bearish)
+        current_price: Price of current pivot (close)
         current_rsi: RSI of current pivot
-        prev_price: Price of previous pivot
+        prev_price: Price of previous pivot (close)
         prev_rsi: RSI of previous pivot
         div_type: "BULLISH" or "BEARISH"
         bullish_rsi_max: Maximum RSI value for bullish divergence (default: 40)
@@ -60,7 +113,7 @@ def detect_divergence(
         "BULLISH" or "BEARISH" if divergence detected, None otherwise
     """
     if div_type == "BULLISH":
-        # Bullish: Current low < previous low (new minimum)
+        # Bullish: Current price < previous price (new minimum)
         # AND current RSI > previous RSI (RSI didn't hit new low)
         # AND both RSI values < bullish_rsi_max
         if (current_price < prev_price and
@@ -70,7 +123,7 @@ def detect_divergence(
             return "BULLISH"
 
     elif div_type == "BEARISH":
-        # Bearish: Current high > previous high (new maximum)
+        # Bearish: Current price > previous price (new maximum)
         # AND current RSI < previous RSI (RSI didn't hit new high)
         # AND both RSI values > bearish_rsi_min
         if (current_price > prev_price and

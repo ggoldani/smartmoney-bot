@@ -51,7 +51,7 @@ indicators:
   breakout:
     enabled: true
     # Only monitor breakouts on daily and weekly
-    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    timeframes: ["1d", "1w", "1M"]
     # Margin to avoid false positives (0.1% = 0.001)
     margin_percent: 0.15
     # Alert immediately when price touches level (not on close)

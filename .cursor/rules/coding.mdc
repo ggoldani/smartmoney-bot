@@ -22,6 +22,7 @@ alwaysApply: false
 - Valores em `configs/free.yaml` (nunca hardcode)
 - Texto PT-BR para templates/alertas ao usuário
 - Inglês para código/comments/docstrings
+- Código modular, sem overengineering, mentalidade KISS (keep it simple stupid)
 
 ❌ **DON'T:**
 - I/O síncrono em funções async

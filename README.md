@@ -48,7 +48,7 @@ docker-compose up -d
 | **2** ✅ | Consolidação | 2+ alertas em janela 6s → 1 mega-alerta consolidado (🚨 sirenes) |
 | **3** ✅ | **Daily Summary** | **Fear & Greed Index (21:05 BRT) + RSI 1D/1W/1M ALTA/BAIXA + variação candle anterior** |
 | **3** ✅ | **Fear & Greed API** | **CoinMarketCap API v3 (`value`/`value_classification`) + exponential backoff (2s-4s-8s)** |
-| **4** ✅ | **RSI Divergence** | **3-candle pivots (bullish=lowest, bearish=highest) + RSI confirmation (price↔RSI diverge) + 2-pivot alert** |
+| **4** ✅ | **RSI Divergence** | **3-candle pivots (bullish=lowest close, bearish=highest close) + RSI confirmation (price↔RSI diverge) + 2-pivot alert** |
 | **4** ✅ | **Divergence Config** | **Timeframes, lookback (40 candles), thresholds configuráveis (bullish <40, bearish >60)** |
 | **5** ✅ | **Multi-symbol** | **BTCUSDT, PAXGUSDT, etc - adicionar símbolos em `configs/free.yaml`** |
 | **5** ✅ | **Daily Summary Multi** | **Resumo consolidado para todos os símbolos trackeados** |
@@ -285,7 +285,7 @@ configs/
 
 **Data Flow:**
 - **Real-time Alerts:** Binance WS (multi-symbol streams) → Candles → SQLite → Alert Engine (5s loop) → Indicators (RSI, Breakout, Divergence) → Rules → Throttle → Telegram
-- **Divergence:** 3-candle pivot detection → Compare with previous pivot → RSI confirmation (thresholds configuráveis) → Direct alert (🔼/🔽, no consolidation)
+- **Divergence:** 3-candle pivot detection (close-based) → Compare with previous pivot → RSI confirmation (thresholds configuráveis) → Direct alert (🔼/🔽, no consolidation)
 - **Daily Summary:** Scheduled task (21:05 BRT) → Fetch Fear & Greed API → For each symbol: Get RSI 1D/1W/1M + previous day candle → Format multi-symbol → Telegram
 
 ---
@@ -318,17 +318,17 @@ configs/
 
 ### Divergência RSI
 - **Detecção:** 3-candle pivots (candle do meio é extremo)
-  - **Bullish:** Middle candle é lowest low (fundo)
-  - **Bearish:** Middle candle é highest high (topo)
+  - **Bullish:** Middle candle é lowest close (fundo)
+  - **Bearish:** Middle candle é highest close (topo)
 - **Confirmação:** Comparar com pivô anterior
-  - **BULLISH:** price↓ mas RSI↑ (ambos < `bullish_rsi_max`, default 40) = compra potencial (🔼)
-  - **BEARISH:** price↑ mas RSI↓ (ambos > `bearish_rsi_min`, default 60) = venda potencial (🔽)
+  - **BULLISH:** close↓ mas RSI↑ (ambos < `bullish_rsi_max`, default 40) = compra potencial (🔼)
+  - **BEARISH:** close↑ mas RSI↓ (ambos > `bearish_rsi_min`, default 60) = venda potencial (🔽)
 - **TFs:** 1h, 4h, 1d, 1w, 1M (configuráveis, independentes)
 - **Thresholds:** Configuráveis via YAML (`bullish_rsi_max: 40`, `bearish_rsi_min: 60`)
 - **Lookback:** 40 candles para buscar pivots anteriores
 - **Alerta:** Requer 2 pivots (estado persiste entre restarts)
 - **Janela:** Sem consolidação (direto para Telegram, impactante)
-- **Exemplo:** 1d cai para novo low mas RSI sobe (ambos <40) = divergência bullish
+- **Exemplo:** 1d fecha em novo mínimo mas RSI sobe (ambos <40) = divergência bullish
 
 ### Consolidação de Alertas
 - **Janela:** 6 segundos (cobre 2 ciclos de check de 5s)

@@ -7,6 +7,7 @@ import time
 from src.indicators.divergence import (
     is_bullish_pivot,
     is_bearish_pivot,
+    get_rsi_pivot,
     detect_divergence,
     fetch_candles_for_divergence,
     calculate_rsi_for_candles
@@ -108,7 +109,7 @@ class TestBullishPivot:
     """Test bullish pivot (lowest low) detection."""
 
     def test_valid_bullish_pivot(self, mock_candle):
-        """Should detect valid bullish pivot (middle candle is lowest)."""
+        """Should detect valid bullish pivot (middle candle is lowest low)."""
         candles = [
             mock_candle(low=100.0),
             mock_candle(low=95.0),   # LOWEST
@@ -117,7 +118,7 @@ class TestBullishPivot:
         assert is_bullish_pivot(candles) is True
 
     def test_invalid_bullish_pivot_not_lowest(self, mock_candle):
-        """Should reject pivot if middle candle is not lowest."""
+        """Should reject pivot if middle candle is not lowest low."""
         candles = [
             mock_candle(low=95.0),   # LOWEST
             mock_candle(low=100.0),
@@ -150,7 +151,7 @@ class TestBearishPivot:
     """Test bearish pivot (highest high) detection."""
 
     def test_valid_bearish_pivot(self, mock_candle):
-        """Should detect valid bearish pivot (middle candle is highest)."""
+        """Should detect valid bearish pivot (middle candle is highest high)."""
         candles = [
             mock_candle(high=100.0),
             mock_candle(high=105.0),  # HIGHEST
@@ -159,7 +160,7 @@ class TestBearishPivot:
         assert is_bearish_pivot(candles) is True
 
     def test_invalid_bearish_pivot_not_highest(self, mock_candle):
-        """Should reject pivot if middle candle is not highest."""
+        """Should reject pivot if middle candle is not highest high."""
         candles = [
             mock_candle(high=105.0),  # HIGHEST
             mock_candle(high=100.0),
@@ -184,6 +185,100 @@ class TestBearishPivot:
     def test_invalid_bearish_pivot_empty(self):
         """Should reject empty list."""
         assert is_bearish_pivot([]) is False
+
+
+# ==================== TESTS: RSI PIVOT DETECTION ====================
+
+class TestGetRSIPivot:
+    """Test RSI pivot determination (C1 vs C2)."""
+
+    def test_bullish_rsi_pivot_c2(self, mock_candle):
+        """Should use C2 RSI when C2 has lowest RSI."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=95.0),   # Price pivot (lowest low)
+            mock_candle(close=98.0)
+        ]
+        rsi_values = [35.0, 30.0, 32.0]  # C2 has lowest RSI
+        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
+        assert result is not None
+        assert result == (95.0, 30.0)  # C2 close and RSI
+
+    def test_bullish_rsi_pivot_c1(self, mock_candle):
+        """Should use C1 RSI when C1 has lowest RSI (candle 2 reversal)."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=95.0),   # Price pivot (lowest low), but green candle
+            mock_candle(close=98.0)
+        ]
+        rsi_values = [30.0, 32.0, 35.0]  # C1 has lowest RSI (candle 2 was reversal)
+        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
+        assert result is not None
+        assert result == (100.0, 30.0)  # C1 close and RSI
+
+    def test_bullish_rsi_pivot_invalid(self, mock_candle):
+        """Should return None if no valid RSI pivot (C3 has lowest)."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=95.0),   # Price pivot
+            mock_candle(close=98.0)
+        ]
+        rsi_values = [35.0, 32.0, 30.0]  # C3 has lowest RSI (invalid)
+        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
+        assert result is None
+
+    def test_bearish_rsi_pivot_c2(self, mock_candle):
+        """Should use C2 RSI when C2 has highest RSI."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=105.0),  # Price pivot (highest high)
+            mock_candle(close=102.0)
+        ]
+        rsi_values = [65.0, 70.0, 68.0]  # C2 has highest RSI
+        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
+        assert result is not None
+        assert result == (105.0, 70.0)  # C2 close and RSI
+
+    def test_bearish_rsi_pivot_c1(self, mock_candle):
+        """Should use C1 RSI when C1 has highest RSI (candle 2 reversal)."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=105.0),  # Price pivot (highest high), but red candle
+            mock_candle(close=102.0)
+        ]
+        rsi_values = [70.0, 68.0, 65.0]  # C1 has highest RSI (candle 2 was reversal)
+        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
+        assert result is not None
+        assert result == (100.0, 70.0)  # C1 close and RSI
+
+    def test_bearish_rsi_pivot_invalid(self, mock_candle):
+        """Should return None if no valid RSI pivot (C3 has highest)."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=105.0),  # Price pivot
+            mock_candle(close=102.0)
+        ]
+        rsi_values = [65.0, 68.0, 70.0]  # C3 has highest RSI (invalid)
+        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
+        assert result is None
+
+    def test_rsi_pivot_none_values(self, mock_candle):
+        """Should return None if any RSI value is None."""
+        candles = [
+            mock_candle(close=100.0),
+            mock_candle(close=95.0),
+            mock_candle(close=98.0)
+        ]
+        rsi_values = [35.0, None, 32.0]  # C2 RSI is None
+        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
+        assert result is None
+
+    def test_rsi_pivot_wrong_length(self, mock_candle):
+        """Should return None if wrong length."""
+        candles = [mock_candle(close=100.0), mock_candle(close=95.0)]
+        rsi_values = [35.0, 30.0]
+        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
+        assert result is None
 
 
 # ==================== TESTS: DIVERGENCE DETECTION ====================
@@ -549,7 +644,7 @@ class TestDivergenceIntegration:
             elif i == 12:
                 candles.append(mock_candle(low=94.0, close=94.5))
             else:
-                candles.append(mock_candle(low=100.0 + (i * 0.1)))
+                candles.append(mock_candle(low=100.0 + (i * 0.1), close=100.0 + (i * 0.1) + 0.5))
 
         closes = [c.close for c in candles]
         rsi_values = calculate_rsi_for_candles(closes)
