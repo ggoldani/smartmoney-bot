@@ -22,7 +22,16 @@ alwaysApply: false
 - Valores em `configs/free.yaml` (nunca hardcode)
 - Texto PT-BR para templates/alertas ao usuário
 - Inglês para código/comments/docstrings
-- Código modular, sem overengineering, mentalidade KISS (keep it simple stupid)
+- **KISS (Keep It Simple, Stupid):**
+  - Preferir soluções simples e diretas
+  - Evitar abstrações desnecessárias
+  - Não resolver problemas que não existem
+  - Código legível > código "inteligente"
+- **TDD (Test-Driven Development):**
+  - Escrever teste primeiro (red)
+  - Implementar código mínimo para passar (green)
+  - Refatorar mantendo testes passando (refactor)
+  - Testes como documentação do comportamento esperado
 
 ❌ **DON'T:**
 - I/O síncrono em funções async
@@ -32,10 +41,11 @@ alwaysApply: false
 - `eval()` ou `exec()`
 - Commit `.env` com secrets
 
-## Testes
+## Testes (TDD)
 
 - Framework: **pytest**
 - Coverage mínimo: **90%**
+- **Fluxo TDD:** Teste → Implementação → Refatoração
 - Executar antes de commit: `PYTHONPATH=. pytest tests/ -v`
 
 ```bash

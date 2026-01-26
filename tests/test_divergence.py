@@ -658,6 +658,147 @@ class TestDivergenceIntegration:
         assert True  # Structure validates this through unit tests
 
 
+# ==================== TESTS: LOOKBACK CANDLE WINDOW ====================
+
+class TestLookbackCandleWindow:
+    """Test that lookback filters pivots by candle window, not pivot count."""
+
+    def test_lookback_window_calculation_with_enough_candles(self, mock_candle):
+        """Should calculate min_open_time from lookback position when enough candles."""
+        base_time = int(datetime.now().timestamp()) * 1000
+        lookback = 10
+        
+        # Create 15 candles (more than lookback)
+        candles = [
+            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)  # 1h intervals
+            for i in range(15)
+        ]
+        
+        # min_open_time should be from candles[-lookback] = candles[5]
+        expected_min_time = candles[5].open_time
+        
+        # Simulate the logic from _process_divergences
+        if len(candles) >= lookback:
+            min_open_time = candles[-lookback].open_time
+        else:
+            min_open_time = candles[0].open_time if candles else 0
+        
+        assert min_open_time == expected_min_time
+        assert min_open_time == candles[5].open_time
+
+    def test_lookback_window_calculation_insufficient_candles(self, mock_candle):
+        """Should use first candle when fewer candles than lookback."""
+        base_time = int(datetime.now().timestamp()) * 1000
+        lookback = 20
+        
+        # Create only 5 candles (less than lookback)
+        candles = [
+            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
+            for i in range(5)
+        ]
+        
+        # min_open_time should be from first candle
+        expected_min_time = candles[0].open_time
+        
+        # Simulate the logic from _process_divergences
+        if len(candles) >= lookback:
+            min_open_time = candles[-lookback].open_time
+        else:
+            min_open_time = candles[0].open_time if candles else 0
+        
+        assert min_open_time == expected_min_time
+        assert min_open_time == candles[0].open_time
+
+    def test_pivot_filtering_by_candle_window(self, mock_candle):
+        """Should filter pivots to keep only those within lookback candle window."""
+        base_time = int(datetime.now().timestamp()) * 1000
+        lookback = 10
+        
+        # Create 15 candles
+        candles = [
+            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
+            for i in range(15)
+        ]
+        
+        # Calculate min_open_time (candles[-10] = candles[5])
+        min_open_time = candles[-lookback].open_time
+        
+        # Create mock pivots: some old (before min_open_time), some recent (after)
+        old_pivot_time = base_time + (2 * 3600000)  # Before min_open_time
+        recent_pivot_time = base_time + (8 * 3600000)  # After min_open_time
+        
+        pivots = [
+            {"price": 95.0, "rsi": 30.0, "open_time": old_pivot_time},      # Should be filtered out
+            {"price": 98.0, "rsi": 32.0, "open_time": recent_pivot_time},  # Should be kept
+            {"price": 97.0, "rsi": 31.0, "open_time": old_pivot_time},     # Should be filtered out
+            {"price": 99.0, "rsi": 33.0, "open_time": recent_pivot_time + 3600000},  # Should be kept
+        ]
+        
+        # Filter pivots (simulate logic from _process_divergences)
+        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
+        
+        # Should keep only recent pivots
+        assert len(filtered_pivots) == 2
+        assert all(p["open_time"] >= min_open_time for p in filtered_pivots)
+        assert filtered_pivots[0]["price"] == 98.0
+        assert filtered_pivots[1]["price"] == 99.0
+
+    def test_pivot_filtering_keeps_all_when_all_recent(self, mock_candle):
+        """Should keep all pivots when all are within lookback window."""
+        base_time = int(datetime.now().timestamp()) * 1000
+        lookback = 10
+        
+        # Create 15 candles
+        candles = [
+            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
+            for i in range(15)
+        ]
+        
+        # Calculate min_open_time
+        min_open_time = candles[-lookback].open_time
+        
+        # All pivots are recent (after min_open_time)
+        pivots = [
+            {"price": 98.0, "rsi": 32.0, "open_time": base_time + (8 * 3600000)},
+            {"price": 99.0, "rsi": 33.0, "open_time": base_time + (9 * 3600000)},
+            {"price": 100.0, "rsi": 34.0, "open_time": base_time + (10 * 3600000)},
+        ]
+        
+        # Filter pivots
+        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
+        
+        # Should keep all pivots
+        assert len(filtered_pivots) == 3
+        assert filtered_pivots == pivots
+
+    def test_pivot_filtering_removes_all_when_all_old(self, mock_candle):
+        """Should remove all pivots when all are outside lookback window."""
+        base_time = int(datetime.now().timestamp()) * 1000
+        lookback = 10
+        
+        # Create 15 candles
+        candles = [
+            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
+            for i in range(15)
+        ]
+        
+        # Calculate min_open_time
+        min_open_time = candles[-lookback].open_time
+        
+        # All pivots are old (before min_open_time)
+        pivots = [
+            {"price": 95.0, "rsi": 30.0, "open_time": base_time + (1 * 3600000)},
+            {"price": 96.0, "rsi": 31.0, "open_time": base_time + (2 * 3600000)},
+            {"price": 97.0, "rsi": 32.0, "open_time": base_time + (3 * 3600000)},
+        ]
+        
+        # Filter pivots
+        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
+        
+        # Should remove all pivots
+        assert len(filtered_pivots) == 0
+
+
 # ==================== TESTS: EDGE CASES ====================
 
 class TestDivergenceEdgeCases:

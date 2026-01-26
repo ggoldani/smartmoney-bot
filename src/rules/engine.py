@@ -303,6 +303,29 @@ class AlertEngine:
             bullish_rsi_max = divergence_config.get('bullish_rsi_max', 40)
             bearish_rsi_min = divergence_config.get('bearish_rsi_min', 60)
 
+            # Calculate minimum open_time for lookback window (candles, not pivots)
+            # If we have enough candles, use the one at lookback position from the end
+            # Otherwise, use the first candle available
+            if len(candles) >= lookback:
+                min_open_time = candles[-lookback].open_time
+            else:
+                min_open_time = candles[0].open_time if candles else 0
+
+            # Filter pivots to keep only those within the lookback candle window
+            self.divergence_state[interval]["bullish"] = [
+                p for p in self.divergence_state[interval]["bullish"]
+                if p["open_time"] >= min_open_time
+            ]
+            self.divergence_state[interval]["bearish"] = [
+                p for p in self.divergence_state[interval]["bearish"]
+                if p["open_time"] >= min_open_time
+            ]
+
+            if debug_enabled:
+                logger.debug(f"Filtered pivots for {symbol} {interval}: min_open_time={min_open_time}, "
+                           f"bullish_pivots={len(self.divergence_state[interval]['bullish'])}, "
+                           f"bearish_pivots={len(self.divergence_state[interval]['bearish'])}")
+
             # ===== BULLISH DIVERGENCE CHECK =====
             if is_bullish_pivot(three_candles):
                 # Get RSI pivot (C1 or C2)
@@ -354,13 +377,11 @@ class AlertEngine:
                     }
                     self.divergence_state[interval]["bullish"].append(pivot_data)
                     
-                    # Keep only pivots within lookback (limit list size)
-                    if len(self.divergence_state[interval]["bullish"]) > lookback:
-                        # Remove oldest pivots (keep most recent)
-                        self.divergence_state[interval]["bullish"] = self.divergence_state[interval]["bullish"][-lookback:]
+                    # Pivots are already filtered by candle window above, no need to limit by count
 
                     if debug_enabled:
-                        logger.debug(f"Bullish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}")
+                        logger.debug(f"Bullish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
+                                   f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bullish'])}")
 
             # ===== BEARISH DIVERGENCE CHECK =====
             if is_bearish_pivot(three_candles):
@@ -413,13 +434,11 @@ class AlertEngine:
                     }
                     self.divergence_state[interval]["bearish"].append(pivot_data)
                     
-                    # Keep only pivots within lookback (limit list size)
-                    if len(self.divergence_state[interval]["bearish"]) > lookback:
-                        # Remove oldest pivots (keep most recent)
-                        self.divergence_state[interval]["bearish"] = self.divergence_state[interval]["bearish"][-lookback:]
+                    # Pivots are already filtered by candle window above, no need to limit by count
 
                     if debug_enabled:
-                        logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}")
+                        logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
+                                   f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bearish'])}")
 
         except Exception as e:
             logger.error(f"Failed to process divergences {symbol} {interval}: {e}")
