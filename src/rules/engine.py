@@ -99,6 +99,9 @@ class AlertEngine:
         # NEW: Flag to ensure divergence state is initialized only once
         self._divergence_initialized = False
 
+        # Anti-spam: track last divergence alert per symbol/interval/type
+        self.last_divergence_alert = {}  # key: "PAXGUSDT_4h_BULLISH", value: {"price": ..., "rsi": ...}
+
         # NEW: Initialize divergence state immediately
         self._initialize_divergence_state()
         self._divergence_initialized = True
@@ -151,95 +154,78 @@ class AlertEngine:
     def _initialize_divergence_state(self):
         """
         Scan historical candles to populate divergence state at startup.
-        Excludes currently open candle. Marks pivots as alerted to prevent re-alerting on restart.
-        Initializes state dynamically from config (consistent with RSI/Breakout pattern).
+        Detects pivots by RSI extremes (not price).
+        Excludes currently open candle.
         """
         from src.indicators.divergence import (
             fetch_candles_for_divergence,
             calculate_rsi_for_candles,
-            is_bullish_pivot,
-            is_bearish_pivot,
-            get_rsi_pivot
+            is_rsi_bullish_pivot,
+            is_rsi_bearish_pivot
         )
 
-        symbol = "BTCUSDT"
-        # Get timeframes and lookback from config (dynamic initialization)
+        # Get all configured symbols
+        symbols = get_symbols()
+        
+        # Get timeframes and lookback from config
         divergence_config = get_divergence_config()
         configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
         lookback = divergence_config.get('lookback', 20)
-        
-        # Create lookback config for all configured timeframes
-        lookback_config = {tf: lookback for tf in configured_timeframes}
+        debug_enabled = divergence_config.get('debug_divergence', False)
 
-        for interval, lookback in lookback_config.items():
-            try:
-                # Fetch candles
-                candles = fetch_candles_for_divergence(symbol, interval, lookback)
+        for symbol_config in symbols:
+            symbol = symbol_config.get('name', 'BTCUSDT')
+            
+            for interval in configured_timeframes:
+                try:
+                    # Fetch candles
+                    candles = fetch_candles_for_divergence(symbol, interval, lookback)
 
-                if len(candles) < 3:
-                    logger.debug(f"Insufficient candles for divergence init {symbol} {interval}")
-                    continue
+                    if len(candles) < 3:
+                        logger.debug(f"Insufficient candles for divergence init {symbol} {interval}")
+                        continue
 
-                # Exclude currently open candle
-                if candles and not candles[-1].is_closed:
-                    candles = candles[:-1]
+                    # Exclude currently open candle
+                    if candles and not candles[-1].is_closed:
+                        candles = candles[:-1]
 
-                if len(candles) < 3:
-                    continue
+                    if len(candles) < 3:
+                        continue
 
-                # Calculate RSI for all candles
-                closes = [c.close for c in candles]
-                rsi_values = calculate_rsi_for_candles(closes)
+                    # Calculate RSI for all candles
+                    closes = [c.close for c in candles]
+                    rsi_values = calculate_rsi_for_candles(closes)
 
-                # Scan for all bullish and bearish pivots within lookback
-                for i in range(1, len(candles) - 1):
-                    three_candles = candles[i-1:i+2]
-                    three_rsi = [rsi_values[i-1], rsi_values[i], rsi_values[i+1]]
+                    # Scan for all bullish and bearish pivots within lookback (by RSI)
+                    for i in range(1, len(candles) - 1):
+                        three_rsi = [rsi_values[i-1], rsi_values[i], rsi_values[i+1]]
 
-                    # Check bullish pivot
-                    if is_bullish_pivot(three_candles):
-                        rsi_pivot = get_rsi_pivot(three_candles, three_rsi, "BULLISH")
-                        if rsi_pivot is not None:
-                            close_price, rsi_value = rsi_pivot
+                        # Check bullish pivot (RSI[1] is lowest)
+                        if is_rsi_bullish_pivot(three_rsi):
                             pivot_data = {
-                                "price": close_price,
-                                "rsi": rsi_value,
-                                "open_time": candles[i].open_time  # C2 open_time
+                                "price": candles[i].close,
+                                "rsi": three_rsi[1],
+                                "open_time": candles[i].open_time
                             }
                             self.divergence_state[interval]["bullish"].append(pivot_data)
 
-                            # CRITICAL (Risco 6): Mark as alerted to prevent re-alerting on restart
-                            alert_key = f"{symbol}_{interval}_{candles[i].open_time}_DIVERGENCE_BULLISH"
-                            self.alerted_candles[alert_key] = True
-                            self.alerted_candles_with_timestamp[alert_key] = time.time()
-
-                            debug_enabled = get_divergence_config().get('debug_divergence', False)
                             if debug_enabled:
-                                logger.debug(f"Bullish pivot found {symbol} {interval}: price={close_price}, rsi={rsi_value:.1f}")
+                                logger.debug(f"Bullish pivot found {symbol} {interval}: price={candles[i].close}, rsi={three_rsi[1]:.1f}")
 
-                    # Check bearish pivot
-                    if is_bearish_pivot(three_candles):
-                        rsi_pivot = get_rsi_pivot(three_candles, three_rsi, "BEARISH")
-                        if rsi_pivot is not None:
-                            close_price, rsi_value = rsi_pivot
+                        # Check bearish pivot (RSI[1] is highest)
+                        if is_rsi_bearish_pivot(three_rsi):
                             pivot_data = {
-                                "price": close_price,
-                                "rsi": rsi_value,
-                                "open_time": candles[i].open_time  # C2 open_time
+                                "price": candles[i].close,
+                                "rsi": three_rsi[1],
+                                "open_time": candles[i].open_time
                             }
                             self.divergence_state[interval]["bearish"].append(pivot_data)
 
-                            # CRITICAL (Risco 6): Mark as alerted to prevent re-alerting on restart
-                            alert_key = f"{symbol}_{interval}_{candles[i].open_time}_DIVERGENCE_BEARISH"
-                            self.alerted_candles[alert_key] = True
-                            self.alerted_candles_with_timestamp[alert_key] = time.time()
-
-                            debug_enabled = get_divergence_config().get('debug_divergence', False)
                             if debug_enabled:
-                                logger.debug(f"Bearish pivot found {symbol} {interval}: price={close_price}, rsi={rsi_value:.1f}")
+                                logger.debug(f"Bearish pivot found {symbol} {interval}: price={candles[i].close}, rsi={three_rsi[1]:.1f}")
 
-            except Exception as e:
-                logger.error(f"Failed to initialize divergence state {symbol} {interval}: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize divergence state {symbol} {interval}: {e}")
 
         logger.info("Divergence state initialized for all timeframes")
 
@@ -257,9 +243,8 @@ class AlertEngine:
         from src.indicators.divergence import (
             fetch_candles_for_divergence,
             calculate_rsi_for_candles,
-            is_bullish_pivot,
-            is_bearish_pivot,
-            get_rsi_pivot,
+            is_rsi_bullish_pivot,
+            is_rsi_bearish_pivot,
             detect_divergence
         )
 
@@ -326,115 +311,117 @@ class AlertEngine:
                            f"bullish_pivots={len(self.divergence_state[interval]['bullish'])}, "
                            f"bearish_pivots={len(self.divergence_state[interval]['bearish'])}")
 
-            # ===== BULLISH DIVERGENCE CHECK =====
-            if is_bullish_pivot(three_candles):
-                # Get RSI pivot (C1 or C2)
-                rsi_pivot = get_rsi_pivot(three_candles, three_rsi, "BULLISH")
+            # ===== BULLISH DIVERGENCE CHECK (by RSI pivot) =====
+            if is_rsi_bullish_pivot(three_rsi):
+                # RSI pivot at middle candle (index 1) — record its close and RSI
+                current_rsi = three_rsi[1]
+                current_close = three_candles[1].close
+                current_open_time = three_candles[1].open_time
+
+                # Compare with all previous pivots within lookback
+                previous_pivots = self.divergence_state[interval]["bullish"]
                 
-                if rsi_pivot is not None:
-                    current_close, current_rsi = rsi_pivot
-                    current_candle_idx = len(candles) - 2  # C2 index
-                    current_open_time = candles[current_candle_idx].open_time
+                # Check divergence with any previous pivot
+                divergence_detected = False
+                for prev_pivot in previous_pivots:
+                    if detect_divergence(
+                        current_price=current_close,
+                        current_rsi=current_rsi,
+                        prev_price=prev_pivot["price"],
+                        prev_rsi=prev_pivot["rsi"],
+                        div_type="BULLISH",
+                        bullish_rsi_max=bullish_rsi_max
+                    ):
+                        divergence_detected = True
+                        break
 
-                    # Compare with all previous pivots within lookback
-                    previous_pivots = self.divergence_state[interval]["bullish"]
+                if divergence_detected:
+                    # Anti-spam: compare with last alert (simple approach)
+                    cache_key = f"{symbol}_{interval}_BULLISH"
+                    last = self.last_divergence_alert.get(cache_key)
                     
-                    # Check divergence with any previous pivot
-                    divergence_detected = False
-                    for prev_pivot in previous_pivots:
-                        if detect_divergence(
-                            current_price=current_close,
-                            current_rsi=current_rsi,
-                            prev_price=prev_pivot["price"],
-                            prev_rsi=prev_pivot["rsi"],
-                            div_type="BULLISH",
-                            bullish_rsi_max=bullish_rsi_max
-                        ):
-                            divergence_detected = True
-                            break
-
-                    if divergence_detected:
-                        # CRITICAL (Risco 2): alert_key uses open_time of CURRENT candle (hora do alerta)
-                        alert_key = f"{symbol}_{interval}_{open_time}_DIVERGENCE_BULLISH"
-
-                        # Check if already alerted (prevent duplicates within same candle)
-                        if alert_key not in self.alerted_candles:
-                            # Divergence detected! Send alert
-                            await self._send_divergence_alert("BULLISH", interval, symbol, current_close, current_rsi)
-                            logger.info(f"BULLISH divergence detected {symbol} {interval}")
-
-                            # Mark as alerted (Risco 6: prevent re-alerting)
-                            self.alerted_candles[alert_key] = True
-                            self.alerted_candles_with_timestamp[alert_key] = time.time()
-                        elif debug_enabled:
-                            logger.debug(f"BULLISH divergence already alerted for this candle: {alert_key}")
-
-                    # Add new pivot to list (always record if RSI pivot is valid)
-                    pivot_data = {
-                        "price": current_close,
-                        "rsi": current_rsi,
-                        "open_time": current_open_time
-                    }
-                    self.divergence_state[interval]["bullish"].append(pivot_data)
+                    same_signal = (
+                        last and
+                        round(last["price"], 2) == round(current_close, 2) and
+                        round(last["rsi"], 1) == round(current_rsi, 1)
+                    )
                     
-                    # Pivots are already filtered by candle window above, no need to limit by count
+                    if same_signal:
+                        if debug_enabled:
+                            logger.debug(f"Skip duplicate divergence: {cache_key} (price={current_close}, rsi={current_rsi:.1f})")
+                    else:
+                        # Divergence detected! Send alert
+                        await self._send_divergence_alert("BULLISH", interval, symbol, current_close, current_rsi)
+                        logger.info(f"BULLISH divergence detected {symbol} {interval}")
+                        
+                        # Save last alert for anti-spam
+                        self.last_divergence_alert[cache_key] = {"price": current_close, "rsi": current_rsi}
 
-                    if debug_enabled:
-                        logger.debug(f"Bullish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
-                                   f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bullish'])}")
+                # Add new pivot to list
+                pivot_data = {
+                    "price": current_close,
+                    "rsi": current_rsi,
+                    "open_time": current_open_time
+                }
+                self.divergence_state[interval]["bullish"].append(pivot_data)
 
-            # ===== BEARISH DIVERGENCE CHECK =====
-            if is_bearish_pivot(three_candles):
-                # Get RSI pivot (C1 or C2)
-                rsi_pivot = get_rsi_pivot(three_candles, three_rsi, "BEARISH")
+                if debug_enabled:
+                    logger.debug(f"Bullish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
+                               f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bullish'])}")
+
+            # ===== BEARISH DIVERGENCE CHECK (by RSI pivot) =====
+            if is_rsi_bearish_pivot(three_rsi):
+                # RSI pivot at middle candle (index 1) — record its close and RSI
+                current_rsi = three_rsi[1]
+                current_close = three_candles[1].close
+                current_open_time = three_candles[1].open_time
+
+                # Compare with all previous pivots within lookback
+                previous_pivots = self.divergence_state[interval]["bearish"]
                 
-                if rsi_pivot is not None:
-                    current_close, current_rsi = rsi_pivot
-                    current_candle_idx = len(candles) - 2  # C2 index
-                    current_open_time = candles[current_candle_idx].open_time
+                # Check divergence with any previous pivot
+                divergence_detected = False
+                for prev_pivot in previous_pivots:
+                    if detect_divergence(
+                        current_price=current_close,
+                        current_rsi=current_rsi,
+                        prev_price=prev_pivot["price"],
+                        prev_rsi=prev_pivot["rsi"],
+                        div_type="BEARISH",
+                        bearish_rsi_min=bearish_rsi_min
+                    ):
+                        divergence_detected = True
+                        break
 
-                    # Compare with all previous pivots within lookback
-                    previous_pivots = self.divergence_state[interval]["bearish"]
+                if divergence_detected:
+                    # Anti-spam: compare with last alert (simple approach)
+                    cache_key = f"{symbol}_{interval}_BEARISH"
+                    last = self.last_divergence_alert.get(cache_key)
                     
-                    # Check divergence with any previous pivot
-                    divergence_detected = False
-                    for prev_pivot in previous_pivots:
-                        if detect_divergence(
-                            current_price=current_close,
-                            current_rsi=current_rsi,
-                            prev_price=prev_pivot["price"],
-                            prev_rsi=prev_pivot["rsi"],
-                            div_type="BEARISH",
-                            bearish_rsi_min=bearish_rsi_min
-                        ):
-                            divergence_detected = True
-                            break
-
-                    if divergence_detected:
-                        # CRITICAL (Risco 2): alert_key uses open_time of CURRENT candle (hora do alerta)
-                        alert_key = f"{symbol}_{interval}_{open_time}_DIVERGENCE_BEARISH"
-
-                        # Check if already alerted (prevent duplicates within same candle)
-                        if alert_key not in self.alerted_candles:
-                            # Divergence detected! Send alert
-                            await self._send_divergence_alert("BEARISH", interval, symbol, current_close, current_rsi)
-                            logger.info(f"BEARISH divergence detected {symbol} {interval}")
-
-                            # Mark as alerted (Risco 6: prevent re-alerting)
-                            self.alerted_candles[alert_key] = True
-                            self.alerted_candles_with_timestamp[alert_key] = time.time()
-                        elif debug_enabled:
-                            logger.debug(f"BEARISH divergence already alerted for this candle: {alert_key}")
-
-                    # Add new pivot to list (always record if RSI pivot is valid)
-                    pivot_data = {
-                        "price": current_close,
-                        "rsi": current_rsi,
-                        "open_time": current_open_time
-                    }
-                    self.divergence_state[interval]["bearish"].append(pivot_data)
+                    same_signal = (
+                        last and
+                        round(last["price"], 2) == round(current_close, 2) and
+                        round(last["rsi"], 1) == round(current_rsi, 1)
+                    )
                     
-                    # Pivots are already filtered by candle window above, no need to limit by count
+                    if same_signal:
+                        if debug_enabled:
+                            logger.debug(f"Skip duplicate divergence: {cache_key} (price={current_close}, rsi={current_rsi:.1f})")
+                    else:
+                        # Divergence detected! Send alert
+                        await self._send_divergence_alert("BEARISH", interval, symbol, current_close, current_rsi)
+                        logger.info(f"BEARISH divergence detected {symbol} {interval}")
+                        
+                        # Save last alert for anti-spam
+                        self.last_divergence_alert[cache_key] = {"price": current_close, "rsi": current_rsi}
+
+                # Add new pivot to list
+                pivot_data = {
+                    "price": current_close,
+                    "rsi": current_rsi,
+                    "open_time": current_open_time
+                }
+                self.divergence_state[interval]["bearish"].append(pivot_data)
 
                     if debug_enabled:
                         logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "

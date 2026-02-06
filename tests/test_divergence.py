@@ -1,13 +1,12 @@
-"""Test suite for RSI divergence detection."""
+"""Test suite for RSI divergence detection (RSI-based pivot detection)."""
 import pytest
 from unittest.mock import Mock, MagicMock, AsyncMock, patch
 from datetime import datetime
 import time
 
 from src.indicators.divergence import (
-    is_bullish_pivot,
-    is_bearish_pivot,
-    get_rsi_pivot,
+    is_rsi_bullish_pivot,
+    is_rsi_bearish_pivot,
     detect_divergence,
     fetch_candles_for_divergence,
     calculate_rsi_for_candles
@@ -103,182 +102,86 @@ def bearish_candles(mock_candle):
     return candles
 
 
-# ==================== TESTS: BULLISH PIVOT DETECTION ====================
+# ==================== TESTS: RSI BULLISH PIVOT DETECTION ====================
 
-class TestBullishPivot:
-    """Test bullish pivot (lowest low) detection."""
+class TestRSIBullishPivot:
+    """Test bullish pivot detection (RSI[1] is lowest)."""
 
-    def test_valid_bullish_pivot(self, mock_candle):
-        """Should detect valid bullish pivot (middle candle is lowest low)."""
-        candles = [
-            mock_candle(low=100.0),
-            mock_candle(low=95.0),   # LOWEST
-            mock_candle(low=98.0)
-        ]
-        assert is_bullish_pivot(candles) is True
+    def test_valid_bullish_pivot(self):
+        """Should detect valid bullish pivot (middle RSI is lowest)."""
+        rsi_values = [35.0, 30.0, 32.0]  # RSI[1] is lowest
+        assert is_rsi_bullish_pivot(rsi_values) is True
 
-    def test_invalid_bullish_pivot_not_lowest(self, mock_candle):
-        """Should reject pivot if middle candle is not lowest low."""
-        candles = [
-            mock_candle(low=95.0),   # LOWEST
-            mock_candle(low=100.0),
-            mock_candle(low=98.0)
-        ]
-        assert is_bullish_pivot(candles) is False
+    def test_invalid_bullish_pivot_not_lowest(self):
+        """Should reject pivot if middle RSI is not lowest."""
+        rsi_values = [30.0, 35.0, 32.0]  # RSI[0] is lowest
+        assert is_rsi_bullish_pivot(rsi_values) is False
 
-    def test_invalid_bullish_pivot_equal_lows(self, mock_candle):
-        """Should reject pivot if lows are equal."""
-        candles = [
-            mock_candle(low=100.0),
-            mock_candle(low=100.0),
-            mock_candle(low=100.0)
-        ]
-        assert is_bullish_pivot(candles) is False
+    def test_invalid_bullish_pivot_c3_lowest(self):
+        """Should reject pivot if third RSI is lowest."""
+        rsi_values = [35.0, 32.0, 30.0]  # RSI[2] is lowest
+        assert is_rsi_bullish_pivot(rsi_values) is False
 
-    def test_invalid_bullish_pivot_wrong_length(self, mock_candle):
-        """Should reject if not exactly 3 candles."""
-        candles = [mock_candle(low=100.0), mock_candle(low=95.0)]
-        assert is_bullish_pivot(candles) is False
+    def test_invalid_bullish_pivot_equal_values(self):
+        """Should reject pivot if RSI values are equal."""
+        rsi_values = [30.0, 30.0, 30.0]
+        assert is_rsi_bullish_pivot(rsi_values) is False
+
+    def test_invalid_bullish_pivot_wrong_length(self):
+        """Should reject if not exactly 3 RSI values."""
+        rsi_values = [35.0, 30.0]
+        assert is_rsi_bullish_pivot(rsi_values) is False
 
     def test_invalid_bullish_pivot_empty(self):
         """Should reject empty list."""
-        assert is_bullish_pivot([]) is False
+        assert is_rsi_bullish_pivot([]) is False
+
+    def test_invalid_bullish_pivot_none_values(self):
+        """Should reject if any RSI value is None."""
+        assert is_rsi_bullish_pivot([35.0, None, 32.0]) is False
+        assert is_rsi_bullish_pivot([None, 30.0, 32.0]) is False
+        assert is_rsi_bullish_pivot([35.0, 30.0, None]) is False
 
 
-# ==================== TESTS: BEARISH PIVOT DETECTION ====================
+# ==================== TESTS: RSI BEARISH PIVOT DETECTION ====================
 
-class TestBearishPivot:
-    """Test bearish pivot (highest high) detection."""
+class TestRSIBearishPivot:
+    """Test bearish pivot detection (RSI[1] is highest)."""
 
-    def test_valid_bearish_pivot(self, mock_candle):
-        """Should detect valid bearish pivot (middle candle is highest high)."""
-        candles = [
-            mock_candle(high=100.0),
-            mock_candle(high=105.0),  # HIGHEST
-            mock_candle(high=102.0)
-        ]
-        assert is_bearish_pivot(candles) is True
+    def test_valid_bearish_pivot(self):
+        """Should detect valid bearish pivot (middle RSI is highest)."""
+        rsi_values = [65.0, 70.0, 68.0]  # RSI[1] is highest
+        assert is_rsi_bearish_pivot(rsi_values) is True
 
-    def test_invalid_bearish_pivot_not_highest(self, mock_candle):
-        """Should reject pivot if middle candle is not highest high."""
-        candles = [
-            mock_candle(high=105.0),  # HIGHEST
-            mock_candle(high=100.0),
-            mock_candle(high=102.0)
-        ]
-        assert is_bearish_pivot(candles) is False
+    def test_invalid_bearish_pivot_not_highest(self):
+        """Should reject pivot if middle RSI is not highest."""
+        rsi_values = [70.0, 65.0, 68.0]  # RSI[0] is highest
+        assert is_rsi_bearish_pivot(rsi_values) is False
 
-    def test_invalid_bearish_pivot_equal_highs(self, mock_candle):
-        """Should reject pivot if highs are equal."""
-        candles = [
-            mock_candle(high=100.0),
-            mock_candle(high=100.0),
-            mock_candle(high=100.0)
-        ]
-        assert is_bearish_pivot(candles) is False
+    def test_invalid_bearish_pivot_c3_highest(self):
+        """Should reject pivot if third RSI is highest."""
+        rsi_values = [65.0, 68.0, 70.0]  # RSI[2] is highest
+        assert is_rsi_bearish_pivot(rsi_values) is False
 
-    def test_invalid_bearish_pivot_wrong_length(self, mock_candle):
-        """Should reject if not exactly 3 candles."""
-        candles = [mock_candle(high=100.0), mock_candle(high=105.0)]
-        assert is_bearish_pivot(candles) is False
+    def test_invalid_bearish_pivot_equal_values(self):
+        """Should reject pivot if RSI values are equal."""
+        rsi_values = [70.0, 70.0, 70.0]
+        assert is_rsi_bearish_pivot(rsi_values) is False
+
+    def test_invalid_bearish_pivot_wrong_length(self):
+        """Should reject if not exactly 3 RSI values."""
+        rsi_values = [65.0, 70.0]
+        assert is_rsi_bearish_pivot(rsi_values) is False
 
     def test_invalid_bearish_pivot_empty(self):
         """Should reject empty list."""
-        assert is_bearish_pivot([]) is False
+        assert is_rsi_bearish_pivot([]) is False
 
-
-# ==================== TESTS: RSI PIVOT DETECTION ====================
-
-class TestGetRSIPivot:
-    """Test RSI pivot determination (C1 vs C2)."""
-
-    def test_bullish_rsi_pivot_c2(self, mock_candle):
-        """Should use C2 RSI when C2 has lowest RSI."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=95.0),   # Price pivot (lowest low)
-            mock_candle(close=98.0)
-        ]
-        rsi_values = [35.0, 30.0, 32.0]  # C2 has lowest RSI
-        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
-        assert result is not None
-        assert result == (95.0, 30.0)  # C2 close and RSI
-
-    def test_bullish_rsi_pivot_c1(self, mock_candle):
-        """Should use C1 RSI when C1 has lowest RSI (candle 2 reversal)."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=95.0),   # Price pivot (lowest low), but green candle
-            mock_candle(close=98.0)
-        ]
-        rsi_values = [30.0, 32.0, 35.0]  # C1 has lowest RSI (candle 2 was reversal)
-        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
-        assert result is not None
-        assert result == (100.0, 30.0)  # C1 close and RSI
-
-    def test_bullish_rsi_pivot_invalid(self, mock_candle):
-        """Should return None if no valid RSI pivot (C3 has lowest)."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=95.0),   # Price pivot
-            mock_candle(close=98.0)
-        ]
-        rsi_values = [35.0, 32.0, 30.0]  # C3 has lowest RSI (invalid)
-        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
-        assert result is None
-
-    def test_bearish_rsi_pivot_c2(self, mock_candle):
-        """Should use C2 RSI when C2 has highest RSI."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=105.0),  # Price pivot (highest high)
-            mock_candle(close=102.0)
-        ]
-        rsi_values = [65.0, 70.0, 68.0]  # C2 has highest RSI
-        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
-        assert result is not None
-        assert result == (105.0, 70.0)  # C2 close and RSI
-
-    def test_bearish_rsi_pivot_c1(self, mock_candle):
-        """Should use C1 RSI when C1 has highest RSI (candle 2 reversal)."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=105.0),  # Price pivot (highest high), but red candle
-            mock_candle(close=102.0)
-        ]
-        rsi_values = [70.0, 68.0, 65.0]  # C1 has highest RSI (candle 2 was reversal)
-        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
-        assert result is not None
-        assert result == (100.0, 70.0)  # C1 close and RSI
-
-    def test_bearish_rsi_pivot_invalid(self, mock_candle):
-        """Should return None if no valid RSI pivot (C3 has highest)."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=105.0),  # Price pivot
-            mock_candle(close=102.0)
-        ]
-        rsi_values = [65.0, 68.0, 70.0]  # C3 has highest RSI (invalid)
-        result = get_rsi_pivot(candles, rsi_values, "BEARISH")
-        assert result is None
-
-    def test_rsi_pivot_none_values(self, mock_candle):
-        """Should return None if any RSI value is None."""
-        candles = [
-            mock_candle(close=100.0),
-            mock_candle(close=95.0),
-            mock_candle(close=98.0)
-        ]
-        rsi_values = [35.0, None, 32.0]  # C2 RSI is None
-        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
-        assert result is None
-
-    def test_rsi_pivot_wrong_length(self, mock_candle):
-        """Should return None if wrong length."""
-        candles = [mock_candle(close=100.0), mock_candle(close=95.0)]
-        rsi_values = [35.0, 30.0]
-        result = get_rsi_pivot(candles, rsi_values, "BULLISH")
-        assert result is None
+    def test_invalid_bearish_pivot_none_values(self):
+        """Should reject if any RSI value is None."""
+        assert is_rsi_bearish_pivot([65.0, None, 68.0]) is False
+        assert is_rsi_bearish_pivot([None, 70.0, 68.0]) is False
+        assert is_rsi_bearish_pivot([65.0, 70.0, None]) is False
 
 
 # ==================== TESTS: DIVERGENCE DETECTION ====================
@@ -891,3 +794,94 @@ class TestDivergenceEdgeCases:
             div_type="BULLISH"
         )
         assert result == "BULLISH"
+
+
+# ==================== TESTS: ANTI-SPAM LOGIC ====================
+
+class TestDivergenceAntiSpam:
+    """Test anti-spam logic for divergence alerts."""
+
+    def test_same_signal_detected(self):
+        """Should detect same signal when price and RSI match (after rounding)."""
+        last_alert = {"price": 5050.19, "rsi": 35.46}
+        current_price = 5050.19
+        current_rsi = 35.46
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is True
+
+    def test_different_price_new_signal(self):
+        """Should detect new signal when price differs."""
+        last_alert = {"price": 5050.19, "rsi": 35.46}
+        current_price = 5055.00  # Different price
+        current_rsi = 35.46
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is False
+
+    def test_different_rsi_new_signal(self):
+        """Should detect new signal when RSI differs."""
+        last_alert = {"price": 5050.19, "rsi": 35.46}
+        current_price = 5050.19
+        current_rsi = 36.50  # Different RSI
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is False
+
+    def test_rounding_precision_price(self):
+        """Should handle price rounding (2 decimals)."""
+        last_alert = {"price": 5050.124, "rsi": 35.0}
+        current_price = 5050.125  # Same when rounded to 2 decimals (both 5050.12)
+        current_rsi = 35.0
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is True
+
+    def test_rounding_precision_rsi(self):
+        """Should handle RSI rounding (1 decimal)."""
+        last_alert = {"price": 5050.00, "rsi": 35.42}
+        current_price = 5050.00
+        current_rsi = 35.44  # Same when rounded to 1 decimal (both 35.4)
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is True
+
+    def test_no_last_alert(self):
+        """Should allow alert when no previous alert exists."""
+        last_alert = None
+        current_price = 5050.19
+        current_rsi = 35.46
+        
+        same_signal = (
+            last_alert is not None and
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is False  # None is falsy, so not same signal
+
+    def test_both_price_and_rsi_different(self):
+        """Should detect new signal when both price and RSI differ."""
+        last_alert = {"price": 5050.19, "rsi": 35.46}
+        current_price = 5100.00  # Different
+        current_rsi = 40.00      # Different
+        
+        same_signal = (
+            round(last_alert["price"], 2) == round(current_price, 2) and
+            round(last_alert["rsi"], 1) == round(current_rsi, 1)
+        )
+        assert same_signal is False
