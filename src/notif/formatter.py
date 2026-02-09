@@ -73,8 +73,8 @@ def format_datetime_br(dt: Optional[datetime] = None) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
         brt = pytz.timezone('America/Sao_Paulo')
         dt = dt.astimezone(brt)
-    elif dt.tzinfo != pytz.timezone('America/Sao_Paulo'):
-        # Convert to BRT if different timezone
+    elif not (hasattr(dt.tzinfo, 'zone') and dt.tzinfo.zone == 'America/Sao_Paulo'):
+        # Convert to BRT if not already in BRT
         brt = pytz.timezone('America/Sao_Paulo')
         dt = dt.astimezone(brt)
 
@@ -143,17 +143,5 @@ def format_timeframe_display(interval: str) -> str:
     Returns:
         Human-readable timeframe in Portuguese
     """
-    mapping = {
-        "1m": "1 minuto",
-        "5m": "5 minutos",
-        "15m": "15 minutos",
-        "30m": "30 minutos",
-        "1h": "1 hora",
-        "2h": "2 horas",
-        "4h": "4 horas",
-        "1d": "1 dia",
-        "3d": "3 dias",
-        "1w": "1 semana",
-        "1M": "1 mês"
-    }
-    return mapping.get(interval, interval)
+    from src.utils.timeframes import TIMEFRAME_DISPLAY
+    return TIMEFRAME_DISPLAY.get(interval, interval)

@@ -2,9 +2,11 @@
 import asyncio
 import json
 import time
+import urllib.parse
 from datetime import datetime, timezone
 import random
 from typing import Dict
+from loguru import logger
 from websockets.exceptions import (
     ConnectionClosed, ConnectionClosedError, ConnectionClosedOK,
     InvalidStatus, WebSocketException
@@ -29,6 +31,9 @@ def _should_save_candle(event: dict) -> bool:
     Isso reduz writes ao DB de ~100/min para ~6/min por timeframe (velas abertas).
     """
     if event.get("is_closed"):
+        # Cleanup throttle entry for this candle (no longer needed after close)
+        key = f"{event['symbol']}_{event['interval']}_{event['open_time']}"
+        _last_save_time.pop(key, None)
         return True  # Velas fechadas sempre salvam
 
     # Vela aberta: verificar throttle
@@ -79,7 +84,7 @@ async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
     backoff = 1
     while True:
         try:
-            print(f"➡️  Conectando em {url} ...")
+            logger.info(f"Connecting to {url} ...")
             async with websockets.connect(
                 url,
                 ping_interval=20,
@@ -87,32 +92,37 @@ async def listen_kline(symbol: str = "BTCUSDT", interval: str = "1m") -> None:
                 close_timeout=5,
                 max_size=2**20,
             ) as ws:
-                print("✅ Conectado.")
+                logger.info("WebSocket connected.")
                 backoff = 1  # reset do backoff
 
                 async for raw in ws:
-                    msg = json.loads(raw)
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+
                     k = msg.get("k")
                     if not k:
                         continue
 
-                    # 🚀 normaliza
-                    event = normalize_kline(msg)  # msg tem {"k": {...}}, símbolo extraído do payload
-                    print(event)
+                    try:
+                        event = normalize_kline(msg)
+                    except (KeyError, ValueError, TypeError) as e:
+                        logger.warning(f"Malformed kline message: {e}")
+                        continue
 
-                    # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
+                    logger.debug(event)
+
                     if _should_save_candle(event):
                         saved = save_candle_event(event)
                         if saved and event["is_closed"]:
-                            print(f"💾 vela fechada salva: {event['symbol']} {event['interval']} open_time={event['open_time']}")
+                            logger.info(f"Closed candle saved: {event['symbol']} {event['interval']} open_time={event['open_time']}")
 
         except Exception as e:
-            print(f"⚠️  WS erro: {e} — reconectando em {backoff}s")
+            logger.warning(f"WS error: {e} — reconnecting in {backoff}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
-
-import urllib.parse
 
 BINANCE_WS_COMBINED = "wss://stream.binance.com:9443/stream"
 
@@ -152,15 +162,16 @@ async def listen_multi_klines(symbols_config: list[dict]) -> None:
 
     while True:
         try:
-            print(f"➡️  Conectando em {url} ...")
+            logger.info(f"Connecting to {url} ...")
             async with websockets.connect(
                 url,
-                ping_interval=20,  # envia ping automático
-                ping_timeout=20,   # sem pong em 20s => erro
+                ping_interval=20,
+                ping_timeout=20,
                 close_timeout=5,
                 max_size=2**20,
             ) as ws:
-                print("✅ Conectado (multi TF).")
+                logger.info("WebSocket connected (multi TF).")
+                base_backoff = 1  # Reset backoff on successful connection
                 backoff = base_backoff
                 last_msg_ts = datetime.now(timezone.utc)
 
@@ -168,44 +179,47 @@ async def listen_multi_klines(symbols_config: list[dict]) -> None:
                     # Watchdog: se passar 90s sem mensagens, força reconexão limpa
                     now = datetime.now(timezone.utc)
                     if (now - last_msg_ts).total_seconds() > 90:
-                        print("⏱️  Watchdog: 90s sem mensagens — fechando e reconectando…")
+                        logger.warning("Watchdog: 90s without messages — closing and reconnecting")
                         await ws.close(code=1000)
                         break
 
                     try:
-                        # recv com timeout para não ficar pendurado para sempre
                         raw = await asyncio.wait_for(ws.recv(), timeout=30)
                     except asyncio.TimeoutError:
-                        # Sem mensagens em 30s: só continua; ping/pong já mantém a conexão viva
                         continue
 
-                    data = json.loads(raw).get("data") or {}
+                    try:
+                        data = json.loads(raw).get("data") or {}
+                    except json.JSONDecodeError:
+                        continue
+
                     k = data.get("k")
                     if not k:
                         continue
 
                     last_msg_ts = datetime.now(timezone.utc)
 
-                    event = normalize_kline(data)
-                    print(event)
+                    try:
+                        event = normalize_kline(data)
+                    except (KeyError, ValueError, TypeError) as e:
+                        logger.warning(f"Malformed kline message: {e}")
+                        continue
 
-                    # 💾 salva com throttle (velas abertas: 1x a cada 10s, fechadas: sempre)
+                    logger.debug(event)
+
                     if _should_save_candle(event):
                         saved = save_candle_event(event)
                         if saved and event["is_closed"]:
-                            print(f"💾 vela fechada salva: {event['symbol']} {event['interval']} open_time={event['open_time']}")
+                            logger.info(f"Closed candle saved: {event['symbol']} {event['interval']} open_time={event['open_time']}")
 
-        
         except (ConnectionClosed, ConnectionClosedError, ConnectionClosedOK, InvalidStatus, WebSocketException) as e:
-            # desconexões "normais" do WS
             jitter = random.uniform(0.8, 1.2)
             base_backoff = min(max_backoff, max(1, int((base_backoff * 2) * jitter)))
-            print(f"⚠️  WS desconectado: {type(e).__name__}: {e} — tentando reconectar em {base_backoff}s")
+            logger.warning(f"WS disconnected: {type(e).__name__}: {e} — reconnecting in {base_backoff}s")
             await asyncio.sleep(base_backoff)
 
         except Exception as e:
-            # qualquer outro erro inesperado
             jitter = random.uniform(0.8, 1.2)
             base_backoff = min(max_backoff, max(1, int((base_backoff * 2) * jitter)))
-            print(f"❗ Erro inesperado: {e} — reconectando em {base_backoff}s")
+            logger.error(f"Unexpected error: {e} — reconnecting in {base_backoff}s")
             await asyncio.sleep(base_backoff)

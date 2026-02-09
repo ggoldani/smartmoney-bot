@@ -4,7 +4,7 @@ Alert throttling and circuit breaker to prevent spam.
 Tracks alert history and enforces rate limits.
 """
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import deque
 from dataclasses import dataclass, field
 from loguru import logger
@@ -17,9 +17,9 @@ class AlertHistory:
     timestamps: deque = field(default_factory=lambda: deque(maxlen=100))
 
     def add_alert(self, timestamp: Optional[datetime] = None):
-        """Record a new alert."""
+        """Record a new alert. All timestamps should be UTC-aware."""
         if timestamp is None:
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
         self.timestamps.append(timestamp)
 
     def count_in_window(self, window_minutes: int) -> int:
@@ -27,7 +27,7 @@ class AlertHistory:
         if not self.timestamps:
             return 0
 
-        cutoff = datetime.now() - timedelta(minutes=window_minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
         count = sum(1 for ts in self.timestamps if ts > cutoff)
         return count
 
@@ -98,7 +98,7 @@ class AlertThrottler:
         Args:
             condition_key: Unique identifier for this alert type
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Record in global history
         self.global_history.add_alert(now)
@@ -140,7 +140,12 @@ _throttler_instance: Optional[AlertThrottler] = None
 
 
 def get_throttler() -> AlertThrottler:
-    """Get global alert throttler instance."""
+    """
+    Get global alert throttler instance (singleton).
+
+    Thread-safety note: this singleton is single-threaded by design.
+    The bot runs in a single asyncio event loop, so no lock is needed.
+    """
     global _throttler_instance
 
     if _throttler_instance is None:

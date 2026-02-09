@@ -79,10 +79,9 @@ def cleanup_old_candles() -> Dict[str, int]:
 
                     candle_ids = [c.id for c in oldest_candles]
 
-                    # Delete them
+                    # Delete them (commit is done once after all symbols)
                     stmt = delete(Candle).where(Candle.id.in_(candle_ids))
                     result = session.execute(stmt)
-                    session.commit()
 
                     deleted_count = result.rowcount
                     total_deleted += deleted_count
@@ -99,6 +98,9 @@ def cleanup_old_candles() -> Dict[str, int]:
                         f"Skipped {symbol} {interval}: "
                         f"{total_count} candles (below minimum {min_candles_per_tf})"
                     )
+
+        # Single commit after processing all symbols/intervals
+        session.commit()
 
     logger.info(f"Database cleanup complete: deleted {total_deleted} candles")
 

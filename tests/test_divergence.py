@@ -463,8 +463,9 @@ class TestFetchCandlesForDivergence:
 
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
         assert len(result) == 5
-        # Should be reversed to oldest first
-        assert result == sample_candles[:5]
+        # Should be reversed to oldest first (returns dicts now)
+        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in sample_candles[:5]]
+        assert result == expected
         # Verify order_by was called with desc
         mock_filter.order_by.assert_called_once()
 
@@ -504,8 +505,9 @@ class TestFetchCandlesForDivergence:
 
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 10)
         assert len(result) == 10
-        # Should be reversed to oldest first
-        assert result == sample_candles[:10]
+        # Should be reversed to oldest first (returns dicts now)
+        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in sample_candles[:10]]
+        assert result == expected
     
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_orders_desc_then_reverses(self, mock_session_class, mock_candle):
@@ -528,9 +530,10 @@ class TestFetchCandlesForDivergence:
         
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
         
-        # Should be reversed to oldest first
-        assert result == candles
-        assert result[0].open_time < result[-1].open_time
+        # Should be reversed to oldest first (returns dicts now)
+        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in candles]
+        assert result == expected
+        assert result[0]["open_time"] < result[-1]["open_time"]
 
 
 # ==================== TESTS: DIVERGENCE INTEGRATION ====================

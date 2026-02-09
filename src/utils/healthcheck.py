@@ -137,7 +137,12 @@ _healthcheck_instance: Optional[HealthcheckServer] = None
 
 
 def get_healthcheck() -> HealthcheckServer:
-    """Get global healthcheck server instance (singleton)."""
+    """
+    Get global healthcheck server instance (singleton).
+
+    Thread-safety note: this singleton is single-threaded by design.
+    The bot runs in a single asyncio event loop, so no lock is needed.
+    """
     global _healthcheck_instance
     if _healthcheck_instance is None:
         _healthcheck_instance = HealthcheckServer()

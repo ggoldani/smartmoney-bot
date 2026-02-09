@@ -78,24 +78,28 @@ def fetch_recent_candles_for_rsi(symbol: str, interval: str, period: int = 14) -
     # +100 buffer for RMA convergence (TradingView compatibility, needs ~100+ candles)
     limit = period + 100
 
-    with SessionLocal() as session:
-        candles = session.query(Candle).filter(
-            and_(
-                Candle.symbol == symbol,
-                Candle.interval == interval
-            )
-        ).order_by(Candle.open_time.desc()).limit(limit).all()
+    try:
+        with SessionLocal() as session:
+            candles = session.query(Candle).filter(
+                and_(
+                    Candle.symbol == symbol,
+                    Candle.interval == interval
+                )
+            ).order_by(Candle.open_time.desc()).limit(limit).all()
 
-        if not candles:
-            return []
+            if not candles:
+                return []
 
-        # Reverse to get oldest first
-        candles = list(reversed(candles))
+            # Reverse to get oldest first
+            candles = list(reversed(candles))
 
-        # Extract close prices
-        closes = [c.close for c in candles]
+            # Extract close prices
+            closes = [c.close for c in candles]
 
-        return closes
+            return closes
+    except Exception as e:
+        logger.error(f"Failed to fetch candles for RSI {symbol} {interval}: {e}")
+        return []
 
 
 def analyze_rsi(

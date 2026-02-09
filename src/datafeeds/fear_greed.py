@@ -31,7 +31,7 @@ async def fetch_fear_greed_index() -> Tuple[Optional[int], str]:
                     api_url,
                     timeout=aiohttp.ClientTimeout(total=10),
                     headers={
-                        "User-Agent": "tech.goldani@gmail.com",
+                        "User-Agent": os.getenv("API_USER_AGENT", "SmartMoneyBot/1.0"),
                         "X-CMC_PRO_API_KEY": os.getenv("COINMARKETCAP_API_KEY", "")
                     }
                 ) as response:
@@ -44,40 +44,40 @@ async def fetch_fear_greed_index() -> Tuple[Optional[int], str]:
 
                         if fgi_value is not None:
                             logger.info(
-                                f"✅ Fear & Greed Index fetched: {fgi_value}/100 - {fgi_label}"
+                                f"[OK] Fear & Greed Index fetched: {fgi_value}/100 - {fgi_label}"
                             )
                             return fgi_value, fgi_label
                     else:
                         logger.warning(
-                            f"❌ Fear & Greed API error (attempt {attempt}): "
+                            f"[ERROR] Fear & Greed API error (attempt {attempt}): "
                             f"status {response.status}"
                         )
 
         except asyncio.TimeoutError:
             logger.warning(
-                f"⏱️ Fear & Greed API timeout (attempt {attempt}/3)"
+                f"[TIMEOUT] Fear & Greed API timeout (attempt {attempt}/3)"
             )
         except aiohttp.ClientError as e:
             logger.warning(
-                f"🔌 Fear & Greed API connection error (attempt {attempt}/3): {str(e)}"
+                f"[CONN] Fear & Greed API connection error (attempt {attempt}/3): {str(e)}"
             )
         except json.JSONDecodeError as e:
             logger.warning(
-                f"📦 Fear & Greed API invalid JSON (attempt {attempt}/3): {str(e)}"
+                f"[JSON] Fear & Greed API invalid JSON (attempt {attempt}/3): {str(e)}"
             )
         except Exception as e:
             logger.warning(
-                f"⚠️ Fear & Greed API unexpected error (attempt {attempt}/3): {str(e)}"
+                f"[WARN] Fear & Greed API unexpected error (attempt {attempt}/3): {str(e)}"
             )
 
         # Wait before retry (except on last attempt)
         if attempt < len(retry_delays):
-            logger.info(f"⏳ Retry in {delay}s...")
+            logger.info(f"[RETRY] Retry in {delay}s...")
             await asyncio.sleep(delay)
 
     # All retries exhausted
     logger.error(
-        "❌ Fear & Greed Index fetch failed after 3 attempts - using fallback"
+        "[ERROR] Fear & Greed Index fetch failed after 3 attempts - using fallback"
     )
     return None, "Indisponível"
 

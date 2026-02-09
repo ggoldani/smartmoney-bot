@@ -83,28 +83,21 @@ class AlertEngine:
         self.alert_config = get_alert_config()
         self.throttler = get_throttler()
 
-        # NEW: Divergence state tracking (separate per timeframe/type)
-        # Initialize dynamically from config (consistent with RSI/Breakout pattern)
-        divergence_config = get_divergence_config()
-        configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
-        # Store list of pivots (within lookback) instead of just last/prev
-        self.divergence_state = {
-            tf: {
-                "bullish": [],  # List of {price, rsi, open_time} for pivots within lookback
-                "bearish": []   # List of {price, rsi, open_time} for pivots within lookback
-            }
-            for tf in configured_timeframes
-        }
+        # Divergence processor (encapsulates state + detection logic)
+        from src.rules.divergence_processor import DivergenceProcessor
+        self.divergence_processor = DivergenceProcessor()
 
-        # NEW: Flag to ensure divergence state is initialized only once
+        # Divergence state is initialized asynchronously via initialize()
         self._divergence_initialized = False
 
-        # Anti-spam: track last divergence alert per symbol/interval/type
-        self.last_divergence_alert = {}  # key: "PAXGUSDT_4h_BULLISH", value: {"price": ..., "rsi": ...}
-
-        # NEW: Initialize divergence state immediately
-        self._initialize_divergence_state()
-        self._divergence_initialized = True
+    async def initialize(self):
+        """
+        Async initialization: runs blocking divergence state scan in a thread
+        to avoid blocking the event loop.
+        """
+        if not self._divergence_initialized:
+            await asyncio.to_thread(self.divergence_processor.initialize_state)
+            self._divergence_initialized = True
 
     def _get_candle_key(self, symbol: str, interval: str) -> str:
         """Generate unique key for candle tracking."""
@@ -151,309 +144,9 @@ class AlertEngine:
 
                     logger.debug(f"Initialized Breakout condition: {symbol} {interval} = {result['type']}")
 
-    def _initialize_divergence_state(self):
-        """
-        Scan historical candles to populate divergence state at startup.
-        Detects pivots by RSI extremes (not price).
-        Excludes currently open candle.
-        """
-        from src.indicators.divergence import (
-            fetch_candles_for_divergence,
-            calculate_rsi_for_candles,
-            is_rsi_bullish_pivot,
-            is_rsi_bearish_pivot
-        )
-
-        # Get all configured symbols
-        symbols = get_symbols()
-        
-        # Get timeframes and lookback from config
-        divergence_config = get_divergence_config()
-        configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
-        lookback = divergence_config.get('lookback', 20)
-        debug_enabled = divergence_config.get('debug_divergence', False)
-
-        for symbol_config in symbols:
-            symbol = symbol_config.get('name', 'BTCUSDT')
-            
-            for interval in configured_timeframes:
-                try:
-                    # Fetch candles
-                    candles = fetch_candles_for_divergence(symbol, interval, lookback)
-
-                    if len(candles) < 3:
-                        logger.debug(f"Insufficient candles for divergence init {symbol} {interval}")
-                        continue
-
-                    # Exclude currently open candle
-                    if candles and not candles[-1].is_closed:
-                        candles = candles[:-1]
-
-                    if len(candles) < 3:
-                        continue
-
-                    # Calculate RSI for all candles
-                    closes = [c.close for c in candles]
-                    rsi_values = calculate_rsi_for_candles(closes)
-
-                    # Scan for all bullish and bearish pivots within lookback (by RSI)
-                    for i in range(1, len(candles) - 1):
-                        three_rsi = [rsi_values[i-1], rsi_values[i], rsi_values[i+1]]
-
-                        # Check bullish pivot (RSI[1] is lowest)
-                        if is_rsi_bullish_pivot(three_rsi):
-                            pivot_data = {
-                                "price": candles[i].close,
-                                "rsi": three_rsi[1],
-                                "open_time": candles[i].open_time
-                            }
-                            self.divergence_state[interval]["bullish"].append(pivot_data)
-
-                            if debug_enabled:
-                                logger.debug(f"Bullish pivot found {symbol} {interval}: price={candles[i].close}, rsi={three_rsi[1]:.1f}")
-
-                        # Check bearish pivot (RSI[1] is highest)
-                        if is_rsi_bearish_pivot(three_rsi):
-                            pivot_data = {
-                                "price": candles[i].close,
-                                "rsi": three_rsi[1],
-                                "open_time": candles[i].open_time
-                            }
-                            self.divergence_state[interval]["bearish"].append(pivot_data)
-
-                            if debug_enabled:
-                                logger.debug(f"Bearish pivot found {symbol} {interval}: price={candles[i].close}, rsi={three_rsi[1]:.1f}")
-
-                except Exception as e:
-                    logger.error(f"Failed to initialize divergence state {symbol} {interval}: {e}")
-
-        logger.info("Divergence state initialized for all timeframes")
-
     async def _process_divergences(self, symbol: str, interval: str, open_time: int):
-        """
-        Check for divergences on configured timeframes (from config).
-        Called for EACH candle in the loop (consistent with _collect_rsi_alert, _collect_breakout_alert).
-        Detects and sends alerts for bullish/bearish divergences.
-
-        Args:
-            symbol: Trading pair (e.g., "BTCUSDT")
-            interval: Timeframe (e.g., "1h", "4h", "1d", "1w" - must be in config)
-            open_time: Current candle's open_time (used for alert_key)
-        """
-        from src.indicators.divergence import (
-            fetch_candles_for_divergence,
-            calculate_rsi_for_candles,
-            is_rsi_bullish_pivot,
-            is_rsi_bearish_pivot,
-            detect_divergence
-        )
-
-        # Only check timeframes configured for divergence
-        divergence_config = get_divergence_config()
-        if not divergence_config.get('enabled', True):
-            return
-
-        configured_timeframes = divergence_config.get('timeframes', ['4h', '1d', '1w'])
-
-        # Only process if this interval is configured for divergence
-        if interval not in configured_timeframes:
-            return
-
-        try:
-            # Fetch enough candles for RSI calc + pivot detection
-            lookback = divergence_config.get('lookback', 20)
-            candles = fetch_candles_for_divergence(symbol, interval, lookback)
-
-            if len(candles) < 3:
-                return
-
-            # Exclude open candle
-            if candles and not candles[-1].is_closed:
-                candles = candles[:-1]
-
-            if len(candles) < 3:
-                return
-
-            # Calculate RSI
-            closes = [c.close for c in candles]
-            rsi_values = calculate_rsi_for_candles(closes)
-
-            # Check if last 3 candles form a pivot
-            three_candles = candles[-3:]
-            three_rsi = rsi_values[-3:]
-
-            debug_enabled = divergence_config.get('debug_divergence', False)
-            
-            # Get RSI thresholds from config
-            bullish_rsi_max = divergence_config.get('bullish_rsi_max', 40)
-            bearish_rsi_min = divergence_config.get('bearish_rsi_min', 60)
-
-            # Calculate minimum open_time for lookback window (candles, not pivots)
-            # If we have enough candles, use the one at lookback position from the end
-            # Otherwise, use the first candle available
-            if len(candles) >= lookback:
-                min_open_time = candles[-lookback].open_time
-            else:
-                min_open_time = candles[0].open_time if candles else 0
-
-            # Filter pivots to keep only those within the lookback candle window
-            self.divergence_state[interval]["bullish"] = [
-                p for p in self.divergence_state[interval]["bullish"]
-                if p["open_time"] >= min_open_time
-            ]
-            self.divergence_state[interval]["bearish"] = [
-                p for p in self.divergence_state[interval]["bearish"]
-                if p["open_time"] >= min_open_time
-            ]
-
-            if debug_enabled:
-                logger.debug(f"Filtered pivots for {symbol} {interval}: min_open_time={min_open_time}, "
-                           f"bullish_pivots={len(self.divergence_state[interval]['bullish'])}, "
-                           f"bearish_pivots={len(self.divergence_state[interval]['bearish'])}")
-
-            # ===== BULLISH DIVERGENCE CHECK (by RSI pivot) =====
-            if is_rsi_bullish_pivot(three_rsi):
-                # RSI pivot at middle candle (index 1) — record its close and RSI
-                current_rsi = three_rsi[1]
-                current_close = three_candles[1].close
-                current_open_time = three_candles[1].open_time
-
-                # Compare with all previous pivots within lookback
-                previous_pivots = self.divergence_state[interval]["bullish"]
-                
-                # Check divergence with any previous pivot
-                divergence_detected = False
-                for prev_pivot in previous_pivots:
-                    if detect_divergence(
-                        current_price=current_close,
-                        current_rsi=current_rsi,
-                        prev_price=prev_pivot["price"],
-                        prev_rsi=prev_pivot["rsi"],
-                        div_type="BULLISH",
-                        bullish_rsi_max=bullish_rsi_max
-                    ):
-                        divergence_detected = True
-                        break
-
-                if divergence_detected:
-                    # Anti-spam: compare with last alert (simple approach)
-                    cache_key = f"{symbol}_{interval}_BULLISH"
-                    last = self.last_divergence_alert.get(cache_key)
-                    
-                    same_signal = (
-                        last and
-                        round(last["price"], 2) == round(current_close, 2) and
-                        round(last["rsi"], 1) == round(current_rsi, 1)
-                    )
-                    
-                    if same_signal:
-                        if debug_enabled:
-                            logger.debug(f"Skip duplicate divergence: {cache_key} (price={current_close}, rsi={current_rsi:.1f})")
-                    else:
-                        # Divergence detected! Send alert
-                        await self._send_divergence_alert("BULLISH", interval, symbol, current_close, current_rsi)
-                        logger.info(f"BULLISH divergence detected {symbol} {interval}")
-                        
-                        # Save last alert for anti-spam
-                        self.last_divergence_alert[cache_key] = {"price": current_close, "rsi": current_rsi}
-
-                # Add new pivot to list
-                pivot_data = {
-                    "price": current_close,
-                    "rsi": current_rsi,
-                    "open_time": current_open_time
-                }
-                self.divergence_state[interval]["bullish"].append(pivot_data)
-
-                if debug_enabled:
-                    logger.debug(f"Bullish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
-                               f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bullish'])}")
-
-            # ===== BEARISH DIVERGENCE CHECK (by RSI pivot) =====
-            if is_rsi_bearish_pivot(three_rsi):
-                # RSI pivot at middle candle (index 1) — record its close and RSI
-                current_rsi = three_rsi[1]
-                current_close = three_candles[1].close
-                current_open_time = three_candles[1].open_time
-
-                # Compare with all previous pivots within lookback
-                previous_pivots = self.divergence_state[interval]["bearish"]
-                
-                # Check divergence with any previous pivot
-                divergence_detected = False
-                for prev_pivot in previous_pivots:
-                    if detect_divergence(
-                        current_price=current_close,
-                        current_rsi=current_rsi,
-                        prev_price=prev_pivot["price"],
-                        prev_rsi=prev_pivot["rsi"],
-                        div_type="BEARISH",
-                        bearish_rsi_min=bearish_rsi_min
-                    ):
-                        divergence_detected = True
-                        break
-
-                if divergence_detected:
-                    # Anti-spam: compare with last alert (simple approach)
-                    cache_key = f"{symbol}_{interval}_BEARISH"
-                    last = self.last_divergence_alert.get(cache_key)
-                    
-                    same_signal = (
-                        last and
-                        round(last["price"], 2) == round(current_close, 2) and
-                        round(last["rsi"], 1) == round(current_rsi, 1)
-                    )
-                    
-                    if same_signal:
-                        if debug_enabled:
-                            logger.debug(f"Skip duplicate divergence: {cache_key} (price={current_close}, rsi={current_rsi:.1f})")
-                    else:
-                        # Divergence detected! Send alert
-                        await self._send_divergence_alert("BEARISH", interval, symbol, current_close, current_rsi)
-                        logger.info(f"BEARISH divergence detected {symbol} {interval}")
-                        
-                        # Save last alert for anti-spam
-                        self.last_divergence_alert[cache_key] = {"price": current_close, "rsi": current_rsi}
-
-                # Add new pivot to list
-                pivot_data = {
-                    "price": current_close,
-                    "rsi": current_rsi,
-                    "open_time": current_open_time
-                }
-                self.divergence_state[interval]["bearish"].append(pivot_data)
-
-                if debug_enabled:
-                    logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
-                               f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bearish'])}")
-
-        except Exception as e:
-            logger.error(f"Failed to process divergences {symbol} {interval}: {e}")
-
-    async def _send_divergence_alert(self, div_type: str, interval: str, symbol: str, price: float, rsi: float):
-        """
-        Send divergence alert to Telegram.
-
-        Args:
-            div_type: "BULLISH" or "BEARISH"
-            interval: Timeframe (4h, 1d, 1w)
-            symbol: Trading pair symbol (e.g., "BTCUSDT")
-            price: Current price at divergence detection
-            rsi: Current RSI value at divergence detection
-        """
-        from src.notif.templates import template_divergence
-
-        data = {
-            "symbol": symbol,
-            "interval": interval,
-            "div_type": div_type,
-            "price": price,
-            "rsi": rsi
-        }
-
-        message = template_divergence(data)
-        await send_message_async(message)
-        logger.info(f"Divergence alert sent: {div_type} {interval}")
+        """Delegate divergence processing to DivergenceProcessor."""
+        await self.divergence_processor.process(symbol, interval, open_time)
 
     async def check_for_new_candles(self):
         """
@@ -469,6 +162,25 @@ class AlertEngine:
         candles_to_process = []
 
         with SessionLocal() as session:
+            # Single query: get latest candle per (symbol, interval)
+            from sqlalchemy import func, and_
+            subq = session.query(
+                Candle.symbol,
+                Candle.interval,
+                func.max(Candle.open_time).label('max_open_time')
+            ).group_by(Candle.symbol, Candle.interval).subquery()
+
+            latest_candles = session.query(Candle).join(
+                subq,
+                and_(
+                    Candle.symbol == subq.c.symbol,
+                    Candle.interval == subq.c.interval,
+                    Candle.open_time == subq.c.max_open_time
+                )
+            ).all()
+
+            latest_by_key = {(c.symbol, c.interval): c for c in latest_candles}
+
             for sym_config in symbols:
                 symbol = sym_config["name"]
                 timeframes = sym_config["timeframes"]
@@ -481,11 +193,8 @@ class AlertEngine:
                     key = self._get_candle_key(symbol, interval)
                     last_open_time = self.last_processed.get(key, None)
 
-                    # Query for the LATEST candle (whether open or closed)
-                    candle = session.query(Candle).filter(
-                        Candle.symbol == symbol,
-                        Candle.interval == interval
-                    ).order_by(Candle.open_time.desc()).first()
+                    # Lookup from pre-fetched dict (O(1) instead of N queries)
+                    candle = latest_by_key.get((symbol, interval))
 
                     if not candle:
                         continue
@@ -1046,158 +755,14 @@ class AlertEngine:
         logger.info("Stopping alert engine...")
         self.running = False
 
-    async def _send_daily_summary(self):
-        """
-        Daily summary task: send Fear & Greed Index + RSI 1D at 21:00 BRT (00:00 UTC).
-        Runs continuously, calculating next send time each cycle.
-        """
-        from src.datafeeds.fear_greed import fetch_fear_greed_index, get_fear_greed_sentiment
-        from src.notif.templates import template_daily_summary
-        from src.utils.logging import logger
-        import pytz
-        from datetime import datetime, timedelta
-
-        # Get config
-        from src.config import get_daily_summary_config
-        config = get_daily_summary_config()
-
-        if not config.get('enabled', False):
-            logger.info("Daily summary disabled in config")
-            return
-
-        send_time_brt = config.get('send_time_brt', '21:00')
-        send_window_minutes = config.get('send_window_minutes', 5)
-
-        # Parse send time (HH:MM format)
-        try:
-            hour, minute = map(int, send_time_brt.split(':'))
-        except (ValueError, TypeError):
-            logger.error(f"Invalid send_time_brt format: {send_time_brt}")
-            return
-
-        brt_tz = pytz.timezone('America/Sao_Paulo')
-
-        while self.running:
-            try:
-                # Calculate next send time (21:00 BRT today or tomorrow)
-                now_utc = datetime.now(pytz.UTC)
-                now_brt = now_utc.astimezone(brt_tz)
-
-                # Create target datetime at 21:00 BRT today
-                target_brt = now_brt.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-                # If target time has passed, use tomorrow
-                if target_brt <= now_brt:
-                    target_brt = (now_brt + timedelta(days=1)).replace(
-                        hour=hour, minute=minute, second=0, microsecond=0
-                    )
-
-                # Calculate sleep duration
-                now_utc = datetime.now(pytz.UTC)
-                now_brt = now_utc.astimezone(brt_tz)
-                sleep_duration = (target_brt - now_brt).total_seconds()
-
-                logger.info(
-                    f"Daily summary scheduled for {target_brt.strftime('%Y-%m-%d %H:%M BRT')} "
-                    f"(in {sleep_duration:.0f}s)"
-                )
-
-                # Sleep until send time
-                await asyncio.sleep(max(0, sleep_duration))
-
-                # Check if still enabled and running
-                if not self.running:
-                    break
-
-                config = get_daily_summary_config()
-                if not config.get('enabled', False):
-                    logger.info("Daily summary was disabled, pausing task")
-                    break
-
-                # Get current time
-                now_brt = datetime.now(pytz.UTC).astimezone(brt_tz)
-
-                # Check if we're within send window (±N minutes)
-                window_start = now_brt.replace(hour=hour, minute=minute, second=0) - timedelta(
-                    minutes=send_window_minutes
-                )
-                window_end = now_brt.replace(hour=hour, minute=minute, second=0) + timedelta(
-                    minutes=send_window_minutes
-                )
-
-                if window_start <= now_brt <= window_end:
-                    # Fetch Fear & Greed Index
-                    fgi_value, fgi_label = await fetch_fear_greed_index()
-                    fgi_emoji, fgi_sentiment = get_fear_greed_sentiment(fgi_value)
-
-                    # Get all symbols from config
-                    from src.config import get_symbols
-                    symbols_cfg = get_symbols()
-                    
-                    if not symbols_cfg:
-                        logger.warning("No symbols configured for daily summary")
-                        continue
-                    
-                    period = self.rsi_config.get('period', 14)
-                    overbought = self.rsi_config.get('overbought', 70)
-                    oversold = self.rsi_config.get('oversold', 30)
-                    
-                    # Collect data for each symbol
-                    symbols_data = []
-                    from src.storage.repo import get_previous_closed_candle
-                    
-                    for sym_config in symbols_cfg:
-                        symbol = sym_config["name"]
-                        
-                        # Get RSI for 1D, 1W, 1M
-                        rsi_1d_result = analyze_rsi(symbol, "1d", overbought, oversold, period)
-                        rsi_1d = rsi_1d_result.get('rsi', 0) if rsi_1d_result else 0
-
-                        rsi_1w_result = analyze_rsi(symbol, "1w", overbought, oversold, period)
-                        rsi_1w = rsi_1w_result.get('rsi', 0) if rsi_1w_result else 0
-
-                        rsi_1m_result = analyze_rsi(symbol, "1M", overbought, oversold, period)
-                        rsi_1m = rsi_1m_result.get('rsi', 0) if rsi_1m_result else 0
-
-                        # Get previous day closed candle (open/close prices)
-                        closed_candle = get_previous_closed_candle(symbol, "1d")
-                        price_open = closed_candle.open if closed_candle else 0
-                        price_close = closed_candle.close if closed_candle else 0
-                        
-                        symbols_data.append({
-                            "symbol": symbol,
-                            "rsi_1d": rsi_1d,
-                            "rsi_1w": rsi_1w,
-                            "rsi_1m": rsi_1m,
-                            "price_open": price_open,
-                            "price_close": price_close
-                        })
-
-                    # Generate and send consolidated message
-                    from src.notif.templates import template_daily_summary_multi
-                    message = template_daily_summary_multi(
-                        symbols_data=symbols_data,
-                        fear_greed_value=fgi_value if fgi_value else 0,
-                        fear_greed_label=fgi_sentiment,
-                        fear_emoji=fgi_emoji
-                    )
-
-                    success = await send_message_async(message)
-                    if success:
-                        logger.info(f"✅ Daily summary sent ({len(symbols_data)} symbols)")
-                        self.throttler.record_alert("DAILY_SUMMARY")
-                    else:
-                        logger.error("❌ Failed to send daily summary")
-                else:
-                    logger.debug(f"Outside send window ({send_window_minutes}min tolerance)")
-
-            except asyncio.CancelledError:
-                logger.info("Daily summary task cancelled")
-                break
-            except Exception as e:
-                logger.exception(f"Error in daily summary task: {e}")
-                # Sleep before retry
-                await asyncio.sleep(60)
+    async def send_daily_summary(self):
+        """Delegate daily summary to extracted module."""
+        from src.rules.daily_summary import run_daily_summary_loop
+        await run_daily_summary_loop(
+            rsi_config=self.rsi_config,
+            throttler=self.throttler,
+            running_flag_fn=lambda: self.running
+        )
 
 
 # Global engine instance
@@ -1205,7 +770,12 @@ _engine_instance = None
 
 
 def get_alert_engine() -> AlertEngine:
-    """Get global alert engine instance (singleton)."""
+    """
+    Get global alert engine instance (singleton).
+
+    Thread-safety note: this singleton is single-threaded by design.
+    The bot runs in a single asyncio event loop, so no lock is needed.
+    """
     global _engine_instance
     if _engine_instance is None:
         _engine_instance = AlertEngine()

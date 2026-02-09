@@ -123,9 +123,47 @@ def is_indicator_enabled(indicator_name: str) -> bool:
     return get_config().get(f'indicators.{indicator_name}.enabled', False)
 
 
+def _validate_numeric(
+    config: Dict, key: str, default: Any,
+    min_val: float, max_val: float,
+    cast_fn=float, compare_key: str = None, compare_op: str = None
+) -> None:
+    """
+    Validate and sanitize a numeric config value in-place.
+
+    Args:
+        config: Config dict to modify
+        key: Key to validate
+        default: Default value if invalid
+        min_val: Minimum allowed value (exclusive)
+        max_val: Maximum allowed value (exclusive)
+        cast_fn: Type cast function (int or float)
+        compare_key: Optional key to compare against (e.g., 'overbought')
+        compare_op: Comparison operator: '>' means value must be > config[compare_key],
+                    '<' means value must be < config[compare_key]
+    """
+    try:
+        value = cast_fn(config.get(key, default))
+        if value <= min_val or value >= max_val:
+            config[key] = default
+            return
+        # Optional cross-field validation
+        if compare_key and compare_op:
+            ref = config.get(compare_key, 0)
+            if compare_op == '>' and value <= ref:
+                config[key] = default
+                return
+            if compare_op == '<' and value >= ref:
+                config[key] = default
+                return
+        config[key] = value
+    except (ValueError, TypeError):
+        config[key] = default
+
+
 def get_rsi_config() -> Dict[str, Any]:
     """Get RSI config with validation and safe defaults."""
-    rsi_config = get_config().get('indicators.rsi', {})
+    rsi_config = dict(get_config().get('indicators.rsi', {}) or {})
 
     # Validate and apply safe defaults
     if not isinstance(rsi_config, dict):
@@ -141,46 +179,13 @@ def get_rsi_config() -> Dict[str, Any]:
     rsi_config.setdefault('alert_on_touch', True)
 
     # Validate thresholds (safety checks)
-    try:
-        period = int(rsi_config.get('period', 14))
-        if period < 2 or period > 100:
-            rsi_config['period'] = 14
-        else:
-            rsi_config['period'] = period
-    except (ValueError, TypeError):
-        rsi_config['period'] = 14
-
-    try:
-        overbought = float(rsi_config.get('overbought', 70))
-        if overbought <= 50 or overbought >= 100:
-            overbought = 70
-        rsi_config['overbought'] = overbought
-    except (ValueError, TypeError):
-        rsi_config['overbought'] = 70
-
-    try:
-        oversold = float(rsi_config.get('oversold', 30))
-        if oversold <= 0 or oversold >= 50:
-            oversold = 30
-        rsi_config['oversold'] = oversold
-    except (ValueError, TypeError):
-        rsi_config['oversold'] = 30
-
-    try:
-        extreme_overbought = float(rsi_config.get('extreme_overbought', 85))
-        if extreme_overbought <= rsi_config['overbought'] or extreme_overbought >= 100:
-            extreme_overbought = 85
-        rsi_config['extreme_overbought'] = extreme_overbought
-    except (ValueError, TypeError):
-        rsi_config['extreme_overbought'] = 85
-
-    try:
-        extreme_oversold = float(rsi_config.get('extreme_oversold', 15))
-        if extreme_oversold >= rsi_config['oversold'] or extreme_oversold <= 0:
-            extreme_oversold = 15
-        rsi_config['extreme_oversold'] = extreme_oversold
-    except (ValueError, TypeError):
-        rsi_config['extreme_oversold'] = 15
+    _validate_numeric(rsi_config, 'period', 14, min_val=1, max_val=101, cast_fn=int)
+    _validate_numeric(rsi_config, 'overbought', 70, min_val=50, max_val=100)
+    _validate_numeric(rsi_config, 'oversold', 30, min_val=0, max_val=50)
+    _validate_numeric(rsi_config, 'extreme_overbought', 85, min_val=0, max_val=100,
+                      compare_key='overbought', compare_op='>')
+    _validate_numeric(rsi_config, 'extreme_oversold', 15, min_val=0, max_val=100,
+                      compare_key='oversold', compare_op='<')
 
     return rsi_config
 
@@ -224,7 +229,7 @@ def get_daily_summary_config() -> Dict[str, Any]:
 
 def get_divergence_config() -> Dict[str, Any]:
     """Get divergence detection configuration with safe defaults."""
-    div_config = get_config().get('indicators.divergence', {})
+    div_config = dict(get_config().get('indicators.divergence', {}) or {})
 
     if not isinstance(div_config, dict):
         div_config = {}
@@ -238,16 +243,15 @@ def get_divergence_config() -> Dict[str, Any]:
 
 
 # Validate critical env vars on import
+from loguru import logger as _config_logger
+
 if not BOT_TOKEN:
-    import sys
-    print("WARNING: BOT_TOKEN not set - running in dry-run mode")
-    # Don't exit, allow dry-run mode
+    _config_logger.warning("BOT_TOKEN not set - running in dry-run mode")
 
 if not CHANNEL_CHAT_ID:
-    import sys
-    print("WARNING: CHANNEL_CHAT_ID not set - alerts will be logged only")
+    _config_logger.warning("CHANNEL_CHAT_ID not set - alerts will be logged only")
 
 # Validate Fear & Greed API key
 COINMARKETCAP_API_KEY = os.getenv("COINMARKETCAP_API_KEY", "").strip()
 if not COINMARKETCAP_API_KEY:
-    print("WARNING: COINMARKETCAP_API_KEY not set - Fear & Greed Index will show 'Indisponível'")
+    _config_logger.warning("COINMARKETCAP_API_KEY not set - Fear & Greed Index will show 'Indisponível'")

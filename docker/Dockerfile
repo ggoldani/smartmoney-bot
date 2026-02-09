@@ -33,13 +33,14 @@ FROM python:3.13-slim AS runtime
 
 # Metadata
 LABEL maintainer="SmartMoney Brasil"
-LABEL version="2.0.0"
+LABEL version="1.0.0"
 LABEL description="Crypto Trading Alerts Bot for Brazilian Community"
 
 # Environment
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
 # Working directory
 WORKDIR /app
@@ -71,9 +72,7 @@ RUN useradd -r -s /bin/false -u 1001 smartmoney && \
 # Switch to non-root user
 USER smartmoney
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Healthcheck is defined in docker-compose.yml (single source of truth)
 
 # Run bot (production mode - sem --dry-run)
 CMD ["python", "-u", "src/main.py"]

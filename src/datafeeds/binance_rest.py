@@ -21,7 +21,13 @@ class BinanceRESTClient:
         self.session = requests.Session()
 
     def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute function with exponential backoff on failure."""
+        """
+        Execute function with exponential backoff on failure.
+
+        Uses blocking time.sleep() intentionally — this method runs in a
+        background thread via asyncio.to_thread(), so blocking is safe
+        and avoids the complexity of async retry logic.
+        """
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
@@ -180,12 +186,20 @@ async def backfill_all_symbols(config_symbols: List[Dict]) -> Dict[str, Dict[str
         Dict with results per symbol
         Example: {"BTCUSDT": {"1h": 200, "4h": 200, ...}}
     """
+    # Backfill all symbols in parallel
+    tasks = [
+        backfill_historical_data(sym_config["name"], sym_config["timeframes"])
+        for sym_config in config_symbols
+    ]
+    task_results = await asyncio.gather(*tasks, return_exceptions=True)
+
     results = {}
-
-    for sym_config in config_symbols:
+    for sym_config, result in zip(config_symbols, task_results):
         symbol = sym_config["name"]
-        timeframes = sym_config["timeframes"]
-
-        results[symbol] = await backfill_historical_data(symbol, timeframes)
+        if isinstance(result, Exception):
+            logger.error(f"Backfill failed for {symbol}: {result}")
+            results[symbol] = {tf: 0 for tf in sym_config["timeframes"]}
+        else:
+            results[symbol] = result
 
     return results

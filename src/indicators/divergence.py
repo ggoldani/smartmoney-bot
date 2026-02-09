@@ -88,9 +88,9 @@ def fetch_candles_for_divergence(
     symbol: str,
     interval: str,
     lookback: int = 20
-) -> List:
+) -> List[dict]:
     """
-    Fetch recent closed candles for divergence detection.
+    Fetch recent candles for divergence detection.
 
     Args:
         symbol: Trading pair (e.g., "BTCUSDT")
@@ -98,7 +98,8 @@ def fetch_candles_for_divergence(
         lookback: Number of candles to fetch (default 20)
 
     Returns:
-        List of Candle ORM objects (oldest first), or empty list if failed
+        List of candle dicts (oldest first) with keys: close, open_time, is_closed.
+        Empty list if failed.
     """
     from src.storage.db import SessionLocal
     from src.storage.models import Candle
@@ -117,33 +118,62 @@ def fetch_candles_for_divergence(
                 logger.debug(f"No candles found for divergence {symbol} {interval}")
                 return []
 
-            # Return oldest -> newest (expected by RSI calc and pivot logic)
-            return list(reversed(candles))
+            # Convert to dicts inside session to avoid detached ORM objects
+            result = [
+                {"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed}
+                for c in reversed(candles)
+            ]
+            return result
 
     except Exception as e:
         logger.error(f"Failed to fetch divergence candles {symbol} {interval}: {e}")
         return []
 
 
-def calculate_rsi_for_candles(closes: List[float]) -> List[Optional[float]]:
+def calculate_rsi_for_candles(closes: List[float], period: int = 14) -> List[Optional[float]]:
     """
-    Calculate RSI(14) for each candle using incremental approach.
+    Calculate RSI for each candle using Wilder's incremental smoothing (O(n)).
 
     Args:
         closes: List of closing prices (oldest first)
+        period: RSI period (default 14)
 
     Returns:
-        List of RSI values (oldest first), None for first 14 candles
+        List of RSI values (oldest first), None for first `period` candles
     """
-    from src.indicators.rsi import calculate_rsi
+    n = len(closes)
+    rsi_values: List[Optional[float]] = [None] * n
 
-    rsi_values = []
-    for i in range(len(closes)):
-        if i < 14:  # Need 14 candles minimum
-            rsi_values.append(None)
+    if n < period + 1:
+        return rsi_values
+
+    # Calculate price changes
+    changes = [closes[i] - closes[i - 1] for i in range(1, n)]
+
+    # Initial average gain/loss (SMA for first period)
+    avg_gain = sum(max(c, 0) for c in changes[:period]) / period
+    avg_loss = sum(abs(min(c, 0)) for c in changes[:period]) / period
+
+    # RSI for the first complete period
+    if avg_loss == 0:
+        rsi_values[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi_values[period] = round(100 - (100 / (1 + rs)), 2)
+
+    # Wilder's smoothing for subsequent values
+    for i in range(period, len(changes)):
+        change = changes[i]
+        gain = max(change, 0)
+        loss = abs(min(change, 0))
+
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+        if avg_loss == 0:
+            rsi_values[i + 1] = 100.0
         else:
-            # Calculate RSI up to current index
-            rsi = calculate_rsi(closes[:i + 1], period=14)
-            rsi_values.append(rsi)
+            rs = avg_gain / avg_loss
+            rsi_values[i + 1] = round(100 - (100 / (1 + rs)), 2)
 
     return rsi_values

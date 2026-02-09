@@ -125,6 +125,7 @@ async def run_bot():
 
     # Start alert engine and healthcheck server
     alert_engine = get_alert_engine()
+    await alert_engine.initialize()
     healthcheck = get_healthcheck()
 
     # Create tasks
@@ -139,7 +140,7 @@ async def run_bot():
     # Add daily summary task if enabled
     daily_summary_cfg = get_daily_summary_config()
     if daily_summary_cfg.get('enabled', False):
-        tasks.append(asyncio.create_task(alert_engine._send_daily_summary(), name="DailySummary"))
+        tasks.append(asyncio.create_task(alert_engine.send_daily_summary(), name="DailySummary"))
         logger.info(f"Daily summary enabled: {daily_summary_cfg.get('send_time_brt', '21:00')} BRT")
 
     try:

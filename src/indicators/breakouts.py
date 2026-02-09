@@ -4,6 +4,7 @@ Real-time breakout detection.
 Detects when current price breaks previous candle's high/low.
 """
 from typing import Optional, Dict
+from loguru import logger
 from src.storage.db import SessionLocal
 from src.storage.models import Candle
 
@@ -20,25 +21,29 @@ def get_previous_candle(symbol: str, interval: str, current_open_time: int) -> O
     Returns:
         Dict with candle data or None if not found
     """
-    with SessionLocal() as session:
-        candle = session.query(Candle).filter(
-            Candle.symbol == symbol,
-            Candle.interval == interval,
-            Candle.open_time < current_open_time,
-            Candle.is_closed == 1  # Only closed candles
-        ).order_by(Candle.open_time.desc()).first()
+    try:
+        with SessionLocal() as session:
+            candle = session.query(Candle).filter(
+                Candle.symbol == symbol,
+                Candle.interval == interval,
+                Candle.open_time < current_open_time,
+                Candle.is_closed == 1  # Only closed candles
+            ).order_by(Candle.open_time.desc()).first()
 
-        if not candle:
-            return None
+            if not candle:
+                return None
 
-        return {
-            "symbol": candle.symbol,
-            "interval": candle.interval,
-            "open_time": candle.open_time,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-        }
+            return {
+                "symbol": candle.symbol,
+                "interval": candle.interval,
+                "open_time": candle.open_time,
+                "high": candle.high,
+                "low": candle.low,
+                "close": candle.close,
+            }
+    except Exception as e:
+        logger.error(f"Failed to get previous candle {symbol} {interval}: {e}")
+        return None
 
 
 def check_breakout(symbol: str, interval: str, current_price: float,

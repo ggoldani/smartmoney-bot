@@ -1,6 +1,6 @@
 """Tests for alert throttling and rate limiting."""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.notif.throttle import AlertHistory, AlertThrottler
 import time
 
@@ -31,7 +31,7 @@ class TestAlertHistory:
     def test_alert_history_with_explicit_timestamp(self):
         """AlertHistory should accept explicit timestamps."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         history.add_alert(now)
         assert len(history.timestamps) == 1
         assert history.timestamps[0] == now
@@ -49,7 +49,7 @@ class TestAlertHistory:
     def test_alert_history_count_recent_alerts_minute(self):
         """Should count recent alerts in last minute."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # Add 3 alerts in the last minute
         history.add_alert(now)
         history.add_alert(now - timedelta(seconds=30))
@@ -61,7 +61,7 @@ class TestAlertHistory:
     def test_alert_history_count_old_alerts_minute(self):
         """Should not count old alerts outside 1-minute window."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # Add alert outside 1-minute window
         history.add_alert(now - timedelta(minutes=2))
 
@@ -71,7 +71,7 @@ class TestAlertHistory:
     def test_alert_history_count_mixed_window_minute(self):
         """Should count only alerts within 1-minute window."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # Add alerts: 2 recent, 1 old
         history.add_alert(now)
         history.add_alert(now - timedelta(seconds=30))
@@ -83,7 +83,7 @@ class TestAlertHistory:
     def test_alert_history_count_hour_window(self):
         """Should count alerts in 60-minute window."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # Add 5 alerts within last hour
         for i in range(5):
             history.add_alert(now - timedelta(minutes=i * 10))
@@ -94,7 +94,7 @@ class TestAlertHistory:
     def test_alert_history_count_custom_window(self):
         """Should count alerts in custom time window."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         # Add alerts at different times
         history.add_alert(now)
         history.add_alert(now - timedelta(minutes=5))
@@ -312,7 +312,7 @@ class TestThrottlingScenarios:
         throttler = AlertThrottler(max_alerts_per_hour=2)
 
         # Record 2 alerts
-        old_time = datetime.now() - timedelta(minutes=1, seconds=1)
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=1, seconds=1)
         throttler.global_history.add_alert(old_time)
         throttler.global_history.add_alert(old_time)
 
@@ -383,7 +383,7 @@ class TestThrottleEdgeCases:
     def test_alert_history_same_timestamp_multiple_alerts(self):
         """Should handle multiple alerts with same timestamp."""
         history = AlertHistory()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         history.add_alert(now)
         history.add_alert(now)
         history.add_alert(now)
