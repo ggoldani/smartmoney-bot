@@ -423,9 +423,9 @@ class AlertEngine:
                 }
                 self.divergence_state[interval]["bearish"].append(pivot_data)
 
-                    if debug_enabled:
-                        logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
-                                   f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bearish'])}")
+                if debug_enabled:
+                    logger.debug(f"Bearish pivot updated {symbol} {interval}: price={current_close}, rsi={current_rsi:.1f}, "
+                               f"open_time={current_open_time}, total_pivots={len(self.divergence_state[interval]['bearish'])}")
 
         except Exception as e:
             logger.error(f"Failed to process divergences {symbol} {interval}: {e}")
