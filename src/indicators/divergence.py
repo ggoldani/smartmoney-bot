@@ -1,40 +1,74 @@
-"""RSI Divergence detection (bullish/bearish) - detects pivots by RSI extremes."""
+"""RSI Divergence detection (bullish/bearish) - TradingView-style pivot detection."""
 from typing import Optional, List
 from loguru import logger
 
 
-def is_rsi_bullish_pivot(rsi_values: List[Optional[float]]) -> bool:
+def find_rsi_pivot_low(
+    rsi_values: List[Optional[float]], center: int, left: int, right: int
+) -> bool:
     """
-    Check if middle RSI (index 1) is a bullish pivot (lowest RSI).
+    Check if RSI at center index is the lowest within the window [center-left, center+right].
+    Equivalent to ta.pivotlow(rsi, left, right) in PineScript.
 
     Args:
-        rsi_values: List of 3 RSI values [rsi0, rsi1, rsi2] (oldest first)
+        rsi_values: Full list of RSI values (oldest first)
+        center: Index of the candidate pivot
+        left: Number of bars to check to the left
+        right: Number of bars to check to the right
 
     Returns:
-        True if rsi[1] < rsi[0] AND rsi[1] < rsi[2]
+        True if rsi[center] is strictly less than all neighbors in the window
     """
-    if len(rsi_values) != 3:
+    if center < left or center + right >= len(rsi_values):
         return False
-    if any(r is None for r in rsi_values):
+
+    center_val = rsi_values[center]
+    if center_val is None:
         return False
-    return rsi_values[1] < rsi_values[0] and rsi_values[1] < rsi_values[2]
+
+    for i in range(center - left, center + right + 1):
+        if i == center:
+            continue
+        if rsi_values[i] is None:
+            return False
+        if center_val >= rsi_values[i]:
+            return False
+
+    return True
 
 
-def is_rsi_bearish_pivot(rsi_values: List[Optional[float]]) -> bool:
+def find_rsi_pivot_high(
+    rsi_values: List[Optional[float]], center: int, left: int, right: int
+) -> bool:
     """
-    Check if middle RSI (index 1) is a bearish pivot (highest RSI).
+    Check if RSI at center index is the highest within the window [center-left, center+right].
+    Equivalent to ta.pivothigh(rsi, left, right) in PineScript.
 
     Args:
-        rsi_values: List of 3 RSI values [rsi0, rsi1, rsi2] (oldest first)
+        rsi_values: Full list of RSI values (oldest first)
+        center: Index of the candidate pivot
+        left: Number of bars to check to the left
+        right: Number of bars to check to the right
 
     Returns:
-        True if rsi[1] > rsi[0] AND rsi[1] > rsi[2]
+        True if rsi[center] is strictly greater than all neighbors in the window
     """
-    if len(rsi_values) != 3:
+    if center < left or center + right >= len(rsi_values):
         return False
-    if any(r is None for r in rsi_values):
+
+    center_val = rsi_values[center]
+    if center_val is None:
         return False
-    return rsi_values[1] > rsi_values[0] and rsi_values[1] > rsi_values[2]
+
+    for i in range(center - left, center + right + 1):
+        if i == center:
+            continue
+        if rsi_values[i] is None:
+            return False
+        if center_val <= rsi_values[i]:
+            return False
+
+    return True
 
 
 def detect_divergence(
@@ -49,10 +83,13 @@ def detect_divergence(
     """
     Detect divergence between two pivots.
 
+    For bullish: current_price and prev_price should be candle LOWs.
+    For bearish: current_price and prev_price should be candle HIGHs.
+
     Args:
-        current_price: Price of current pivot (close)
+        current_price: Price of current pivot (low for bullish, high for bearish)
         current_rsi: RSI of current pivot
-        prev_price: Price of previous pivot (close)
+        prev_price: Price of previous pivot (low for bullish, high for bearish)
         prev_rsi: RSI of previous pivot
         div_type: "BULLISH" or "BEARISH"
         bullish_rsi_max: Maximum RSI value for bullish divergence (default: 40)
@@ -62,8 +99,7 @@ def detect_divergence(
         "BULLISH" or "BEARISH" if divergence detected, None otherwise
     """
     if div_type == "BULLISH":
-        # Bullish: Current price < previous price (new minimum)
-        # AND current RSI > previous RSI (RSI didn't hit new low)
+        # Bullish: Price makes lower low, RSI makes higher low
         # AND both RSI values < bullish_rsi_max
         if (current_price < prev_price and
             current_rsi > prev_rsi and
@@ -72,8 +108,7 @@ def detect_divergence(
             return "BULLISH"
 
     elif div_type == "BEARISH":
-        # Bearish: Current price > previous price (new maximum)
-        # AND current RSI < previous RSI (RSI didn't hit new high)
+        # Bearish: Price makes higher high, RSI makes lower high
         # AND both RSI values > bearish_rsi_min
         if (current_price > prev_price and
             current_rsi < prev_rsi and
@@ -87,7 +122,7 @@ def detect_divergence(
 def fetch_candles_for_divergence(
     symbol: str,
     interval: str,
-    lookback: int = 20
+    lookback: int = 80
 ) -> List[dict]:
     """
     Fetch recent candles for divergence detection.
@@ -95,10 +130,10 @@ def fetch_candles_for_divergence(
     Args:
         symbol: Trading pair (e.g., "BTCUSDT")
         interval: Timeframe (e.g., "4h", "1d", "1w")
-        lookback: Number of candles to fetch (default 20)
+        lookback: Number of candles to fetch (default 80)
 
     Returns:
-        List of candle dicts (oldest first) with keys: close, open_time, is_closed.
+        List of candle dicts (oldest first) with keys: close, low, high, open_time, is_closed.
         Empty list if failed.
     """
     from src.storage.db import SessionLocal
@@ -120,7 +155,13 @@ def fetch_candles_for_divergence(
 
             # Convert to dicts inside session to avoid detached ORM objects
             result = [
-                {"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed}
+                {
+                    "close": c.close,
+                    "low": c.low,
+                    "high": c.high,
+                    "open_time": c.open_time,
+                    "is_closed": c.is_closed,
+                }
                 for c in reversed(candles)
             ]
             return result

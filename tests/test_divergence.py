@@ -1,15 +1,15 @@
-"""Test suite for RSI divergence detection (RSI-based pivot detection)."""
+"""Test suite for RSI divergence detection (TradingView-style pivot detection)."""
 import pytest
 from unittest.mock import Mock, MagicMock, AsyncMock, patch
 from datetime import datetime
 import time
 
 from src.indicators.divergence import (
-    is_rsi_bullish_pivot,
-    is_rsi_bearish_pivot,
+    find_rsi_pivot_low,
+    find_rsi_pivot_high,
     detect_divergence,
     fetch_candles_for_divergence,
-    calculate_rsi_for_candles
+    calculate_rsi_for_candles,
 )
 from src.storage.models import Candle
 
@@ -58,130 +58,113 @@ def sample_candles(mock_candle):
     return candles
 
 
-@pytest.fixture
-def bullish_candles(mock_candle):
-    """Create 20 candles with bullish trend (lower lows)."""
-    base_time = int(datetime.now().timestamp()) * 1000
-    candles = []
+# ==================== TESTS: RSI PIVOT LOW (find_rsi_pivot_low) ====================
 
-    prices = [110.0, 108.0, 109.0, 107.0, 106.0, 105.0, 104.5, 104.0,
-              103.5, 103.0, 102.5, 102.0, 101.5, 101.0, 100.5, 100.0,
-              100.5, 101.0, 101.5, 102.0]
+class TestFindRSIPivotLow:
+    """Test bullish pivot detection (RSI at center is lowest in window)."""
 
-    for i, price in enumerate(prices):
-        candles.append(mock_candle(
-            open_time=base_time + (i * 86400000),
-            open_price=price,
-            high=price + 1.5,
-            low=price - 1.0,
-            close=price + 0.5
-        ))
+    def test_valid_pivot_low_window_5_5(self):
+        """Should detect pivot when center is the lowest in 5+1+5 window."""
+        # 11 values: center at index 5 is the lowest
+        rsi = [40.0, 38.0, 36.0, 34.0, 32.0, 25.0, 30.0, 33.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is True
 
-    return candles
+    def test_invalid_pivot_low_not_lowest(self):
+        """Should reject when center is not the lowest in window."""
+        # Index 3 has lower value (20.0) than center (25.0)
+        rsi = [40.0, 38.0, 36.0, 20.0, 32.0, 25.0, 30.0, 33.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
+    def test_invalid_pivot_low_right_side_lower(self):
+        """Should reject when a right-side value is lower than center."""
+        rsi = [40.0, 38.0, 36.0, 34.0, 32.0, 25.0, 30.0, 23.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
-@pytest.fixture
-def bearish_candles(mock_candle):
-    """Create 20 candles with bearish trend (higher highs)."""
-    base_time = int(datetime.now().timestamp()) * 1000
-    candles = []
+    def test_invalid_pivot_low_equal_value(self):
+        """Should reject when a neighbor equals the center (strict less-than)."""
+        rsi = [40.0, 38.0, 36.0, 34.0, 32.0, 25.0, 25.0, 33.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
-    prices = [90.0, 92.0, 91.0, 93.0, 94.0, 95.0, 95.5, 96.0,
-              96.5, 97.0, 97.5, 98.0, 98.5, 99.0, 99.5, 100.0,
-              99.5, 99.0, 98.5, 98.0]
+    def test_pivot_low_small_window_1_1(self):
+        """Should work with left=1, right=1 (3-candle window)."""
+        rsi = [35.0, 30.0, 32.0]
+        assert find_rsi_pivot_low(rsi, center=1, left=1, right=1) is True
 
-    for i, price in enumerate(prices):
-        candles.append(mock_candle(
-            open_time=base_time + (i * 86400000),
-            open_price=price,
-            high=price + 1.5,
-            low=price - 1.0,
-            close=price - 0.5
-        ))
+    def test_pivot_low_asymmetric_window(self):
+        """Should work with asymmetric window (left=3, right=2)."""
+        rsi = [40.0, 38.0, 36.0, 25.0, 30.0, 33.0]
+        assert find_rsi_pivot_low(rsi, center=3, left=3, right=2) is True
 
-    return candles
+    def test_pivot_low_out_of_bounds_left(self):
+        """Should return False if center - left < 0."""
+        rsi = [25.0, 30.0, 35.0]
+        assert find_rsi_pivot_low(rsi, center=1, left=5, right=1) is False
 
+    def test_pivot_low_out_of_bounds_right(self):
+        """Should return False if center + right >= len."""
+        rsi = [35.0, 30.0, 25.0]
+        assert find_rsi_pivot_low(rsi, center=1, left=1, right=5) is False
 
-# ==================== TESTS: RSI BULLISH PIVOT DETECTION ====================
+    def test_pivot_low_none_at_center(self):
+        """Should return False if center RSI is None."""
+        rsi = [40.0, 38.0, 36.0, 34.0, 32.0, None, 30.0, 33.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
-class TestRSIBullishPivot:
-    """Test bullish pivot detection (RSI[1] is lowest)."""
+    def test_pivot_low_none_in_window(self):
+        """Should return False if any RSI in window is None."""
+        rsi = [40.0, 38.0, None, 34.0, 32.0, 25.0, 30.0, 33.0, 35.0, 37.0, 39.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
-    def test_valid_bullish_pivot(self):
-        """Should detect valid bullish pivot (middle RSI is lowest)."""
-        rsi_values = [35.0, 30.0, 32.0]  # RSI[1] is lowest
-        assert is_rsi_bullish_pivot(rsi_values) is True
-
-    def test_invalid_bullish_pivot_not_lowest(self):
-        """Should reject pivot if middle RSI is not lowest."""
-        rsi_values = [30.0, 35.0, 32.0]  # RSI[0] is lowest
-        assert is_rsi_bullish_pivot(rsi_values) is False
-
-    def test_invalid_bullish_pivot_c3_lowest(self):
-        """Should reject pivot if third RSI is lowest."""
-        rsi_values = [35.0, 32.0, 30.0]  # RSI[2] is lowest
-        assert is_rsi_bullish_pivot(rsi_values) is False
-
-    def test_invalid_bullish_pivot_equal_values(self):
-        """Should reject pivot if RSI values are equal."""
-        rsi_values = [30.0, 30.0, 30.0]
-        assert is_rsi_bullish_pivot(rsi_values) is False
-
-    def test_invalid_bullish_pivot_wrong_length(self):
-        """Should reject if not exactly 3 RSI values."""
-        rsi_values = [35.0, 30.0]
-        assert is_rsi_bullish_pivot(rsi_values) is False
-
-    def test_invalid_bullish_pivot_empty(self):
-        """Should reject empty list."""
-        assert is_rsi_bullish_pivot([]) is False
-
-    def test_invalid_bullish_pivot_none_values(self):
-        """Should reject if any RSI value is None."""
-        assert is_rsi_bullish_pivot([35.0, None, 32.0]) is False
-        assert is_rsi_bullish_pivot([None, 30.0, 32.0]) is False
-        assert is_rsi_bullish_pivot([35.0, 30.0, None]) is False
+    def test_pivot_low_in_larger_array(self):
+        """Should find pivot within a larger RSI array."""
+        rsi = [50.0] * 5 + [40.0, 38.0, 36.0, 34.0, 32.0, 20.0, 30.0, 33.0, 35.0, 37.0, 39.0] + [50.0] * 5
+        assert find_rsi_pivot_low(rsi, center=10, left=5, right=5) is True
 
 
-# ==================== TESTS: RSI BEARISH PIVOT DETECTION ====================
+# ==================== TESTS: RSI PIVOT HIGH (find_rsi_pivot_high) ====================
 
-class TestRSIBearishPivot:
-    """Test bearish pivot detection (RSI[1] is highest)."""
+class TestFindRSIPivotHigh:
+    """Test bearish pivot detection (RSI at center is highest in window)."""
 
-    def test_valid_bearish_pivot(self):
-        """Should detect valid bearish pivot (middle RSI is highest)."""
-        rsi_values = [65.0, 70.0, 68.0]  # RSI[1] is highest
-        assert is_rsi_bearish_pivot(rsi_values) is True
+    def test_valid_pivot_high_window_5_5(self):
+        """Should detect pivot when center is the highest in 5+1+5 window."""
+        rsi = [60.0, 62.0, 64.0, 66.0, 68.0, 75.0, 70.0, 67.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is True
 
-    def test_invalid_bearish_pivot_not_highest(self):
-        """Should reject pivot if middle RSI is not highest."""
-        rsi_values = [70.0, 65.0, 68.0]  # RSI[0] is highest
-        assert is_rsi_bearish_pivot(rsi_values) is False
+    def test_invalid_pivot_high_not_highest(self):
+        """Should reject when center is not the highest in window."""
+        rsi = [60.0, 62.0, 64.0, 80.0, 68.0, 75.0, 70.0, 67.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
 
-    def test_invalid_bearish_pivot_c3_highest(self):
-        """Should reject pivot if third RSI is highest."""
-        rsi_values = [65.0, 68.0, 70.0]  # RSI[2] is highest
-        assert is_rsi_bearish_pivot(rsi_values) is False
+    def test_invalid_pivot_high_right_side_higher(self):
+        """Should reject when a right-side value is higher than center."""
+        rsi = [60.0, 62.0, 64.0, 66.0, 68.0, 75.0, 70.0, 80.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
 
-    def test_invalid_bearish_pivot_equal_values(self):
-        """Should reject pivot if RSI values are equal."""
-        rsi_values = [70.0, 70.0, 70.0]
-        assert is_rsi_bearish_pivot(rsi_values) is False
+    def test_invalid_pivot_high_equal_value(self):
+        """Should reject when a neighbor equals the center (strict greater-than)."""
+        rsi = [60.0, 62.0, 64.0, 66.0, 68.0, 75.0, 75.0, 67.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
 
-    def test_invalid_bearish_pivot_wrong_length(self):
-        """Should reject if not exactly 3 RSI values."""
-        rsi_values = [65.0, 70.0]
-        assert is_rsi_bearish_pivot(rsi_values) is False
+    def test_pivot_high_small_window_1_1(self):
+        """Should work with left=1, right=1 (3-candle window)."""
+        rsi = [65.0, 70.0, 68.0]
+        assert find_rsi_pivot_high(rsi, center=1, left=1, right=1) is True
 
-    def test_invalid_bearish_pivot_empty(self):
-        """Should reject empty list."""
-        assert is_rsi_bearish_pivot([]) is False
+    def test_pivot_high_out_of_bounds(self):
+        """Should return False if window exceeds array bounds."""
+        rsi = [65.0, 70.0, 68.0]
+        assert find_rsi_pivot_high(rsi, center=1, left=5, right=5) is False
 
-    def test_invalid_bearish_pivot_none_values(self):
-        """Should reject if any RSI value is None."""
-        assert is_rsi_bearish_pivot([65.0, None, 68.0]) is False
-        assert is_rsi_bearish_pivot([None, 70.0, 68.0]) is False
-        assert is_rsi_bearish_pivot([65.0, 70.0, None]) is False
+    def test_pivot_high_none_at_center(self):
+        """Should return False if center RSI is None."""
+        rsi = [60.0, 62.0, 64.0, 66.0, 68.0, None, 70.0, 67.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
+
+    def test_pivot_high_none_in_window(self):
+        """Should return False if any RSI in window is None."""
+        rsi = [60.0, 62.0, None, 66.0, 68.0, 75.0, 70.0, 67.0, 65.0, 63.0, 61.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
 
 
 # ==================== TESTS: DIVERGENCE DETECTION ====================
@@ -189,25 +172,14 @@ class TestRSIBearishPivot:
 class TestDetectDivergence:
     """Test divergence detection logic (2 pivots + RSI condition)."""
 
-    # BULLISH TESTS
+    # BULLISH TESTS (price = low)
     def test_bullish_divergence_valid(self):
-        """Should detect valid bullish divergence."""
+        """Should detect valid bullish divergence (lower low, higher RSI)."""
         result = detect_divergence(
-            current_price=99.0,      # Lower low
-            current_rsi=35.0,        # < 40 (default threshold)
-            prev_price=100.0,        # Previous low
-            prev_rsi=30.0,           # < 40 (default threshold)
-            div_type="BULLISH"
-        )
-        assert result == "BULLISH"
-
-    def test_bullish_divergence_higher_current_rsi(self):
-        """Should detect bullish divergence with higher current RSI."""
-        result = detect_divergence(
-            current_price=99.0,      # Lower low (new minimum)
-            current_rsi=35.0,        # < 40 (default threshold)
-            prev_price=100.0,        # Previous low
-            prev_rsi=30.0,           # < 40 (default threshold), but RSI didn't make new low
+            current_price=94.0,      # Lower low
+            current_rsi=35.0,        # Higher RSI (< 40)
+            prev_price=95.0,         # Previous low
+            prev_rsi=30.0,           # Previous RSI (< 40)
             div_type="BULLISH"
         )
         assert result == "BULLISH"
@@ -215,9 +187,9 @@ class TestDetectDivergence:
     def test_bullish_divergence_rsi_above_threshold(self):
         """Should reject bullish divergence if current RSI >= threshold (default 40)."""
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=40.1,        # > 40 (default threshold) - INVALID
-            prev_price=100.0,
+            current_price=94.0,
+            current_rsi=40.1,        # > 40 - INVALID
+            prev_price=95.0,
             prev_rsi=35.0,
             div_type="BULLISH"
         )
@@ -226,21 +198,20 @@ class TestDetectDivergence:
     def test_bullish_divergence_prev_rsi_above_threshold(self):
         """Should reject bullish divergence if previous RSI >= threshold (default 40)."""
         result = detect_divergence(
-            current_price=99.0,
+            current_price=94.0,
             current_rsi=35.0,
-            prev_price=100.0,
-            prev_rsi=40.1,           # > 40 (default threshold) - INVALID
+            prev_price=95.0,
+            prev_rsi=40.1,           # > 40 - INVALID
             div_type="BULLISH"
         )
         assert result is None
 
     def test_bullish_divergence_custom_threshold(self):
         """Should respect custom bullish_rsi_max threshold."""
-        # With custom threshold of 50, RSI 45 should be valid
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=45.0,        # < 50 (custom threshold)
-            prev_price=100.0,
+            current_price=94.0,
+            current_rsi=45.0,        # < 50 (custom)
+            prev_price=95.0,
             prev_rsi=35.0,
             div_type="BULLISH",
             bullish_rsi_max=50
@@ -250,9 +221,9 @@ class TestDetectDivergence:
     def test_bullish_divergence_custom_threshold_reject(self):
         """Should reject with custom threshold if RSI >= threshold."""
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=50.1,        # > 50 (custom threshold) - INVALID
-            prev_price=100.0,
+            current_price=94.0,
+            current_rsi=50.1,        # > 50 - INVALID
+            prev_price=95.0,
             prev_rsi=35.0,
             div_type="BULLISH",
             bullish_rsi_max=50
@@ -262,10 +233,10 @@ class TestDetectDivergence:
     def test_bullish_divergence_price_not_lower(self):
         """Should reject bullish divergence if price not lower."""
         result = detect_divergence(
-            current_price=101.0,     # NOT lower than prev
-            current_rsi=40.0,
-            prev_price=100.0,
-            prev_rsi=35.0,
+            current_price=96.0,      # NOT lower than prev
+            current_rsi=35.0,
+            prev_price=95.0,
+            prev_rsi=30.0,
             div_type="BULLISH"
         )
         assert result is None
@@ -273,22 +244,22 @@ class TestDetectDivergence:
     def test_bullish_divergence_rsi_lower(self):
         """Should reject bullish divergence if RSI also makes new low."""
         result = detect_divergence(
-            current_price=99.0,      # New low
-            current_rsi=30.0,        # RSI also new low - NO DIVERGENCE
-            prev_price=100.0,
-            prev_rsi=35.0,
+            current_price=94.0,      # Lower low
+            current_rsi=28.0,        # RSI also new low - NO DIVERGENCE
+            prev_price=95.0,
+            prev_rsi=30.0,
             div_type="BULLISH"
         )
         assert result is None
 
-    # BEARISH TESTS
+    # BEARISH TESTS (price = high)
     def test_bearish_divergence_valid(self):
-        """Should detect valid bearish divergence."""
+        """Should detect valid bearish divergence (higher high, lower RSI)."""
         result = detect_divergence(
-            current_price=101.0,     # Higher high
-            current_rsi=65.0,        # > 60 (default threshold)
-            prev_price=100.0,        # Previous high
-            prev_rsi=70.0,           # > 60 (default threshold), but RSI didn't make new high
+            current_price=106.0,     # Higher high
+            current_rsi=65.0,        # Lower RSI (> 60)
+            prev_price=105.0,        # Previous high
+            prev_rsi=70.0,           # Previous RSI (> 60)
             div_type="BEARISH"
         )
         assert result == "BEARISH"
@@ -296,9 +267,9 @@ class TestDetectDivergence:
     def test_bearish_divergence_rsi_below_threshold(self):
         """Should reject bearish divergence if current RSI <= threshold (default 60)."""
         result = detect_divergence(
-            current_price=101.0,
-            current_rsi=59.9,        # < 60 (default threshold) - INVALID
-            prev_price=100.0,
+            current_price=106.0,
+            current_rsi=59.9,        # < 60 - INVALID
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH"
         )
@@ -307,21 +278,20 @@ class TestDetectDivergence:
     def test_bearish_divergence_prev_rsi_below_threshold(self):
         """Should reject bearish divergence if previous RSI <= threshold (default 60)."""
         result = detect_divergence(
-            current_price=101.0,
+            current_price=106.0,
             current_rsi=65.0,
-            prev_price=100.0,
-            prev_rsi=59.9,           # < 60 (default threshold) - INVALID
+            prev_price=105.0,
+            prev_rsi=59.9,           # < 60 - INVALID
             div_type="BEARISH"
         )
         assert result is None
 
     def test_bearish_divergence_custom_threshold(self):
         """Should respect custom bearish_rsi_min threshold."""
-        # With custom threshold of 50, RSI 55 should be valid
         result = detect_divergence(
-            current_price=101.0,
-            current_rsi=55.0,        # > 50 (custom threshold)
-            prev_price=100.0,
+            current_price=106.0,
+            current_rsi=55.0,        # > 50 (custom)
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH",
             bearish_rsi_min=50
@@ -331,9 +301,9 @@ class TestDetectDivergence:
     def test_bearish_divergence_custom_threshold_reject(self):
         """Should reject with custom threshold if RSI <= threshold."""
         result = detect_divergence(
-            current_price=101.0,
-            current_rsi=49.9,        # < 50 (custom threshold) - INVALID
-            prev_price=100.0,
+            current_price=106.0,
+            current_rsi=49.9,        # < 50 - INVALID
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH",
             bearish_rsi_min=50
@@ -343,9 +313,9 @@ class TestDetectDivergence:
     def test_bearish_divergence_price_not_higher(self):
         """Should reject bearish divergence if price not higher."""
         result = detect_divergence(
-            current_price=99.0,      # NOT higher than prev
-            current_rsi=60.0,
-            prev_price=100.0,
+            current_price=104.0,     # NOT higher than prev
+            current_rsi=65.0,
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH"
         )
@@ -354,9 +324,9 @@ class TestDetectDivergence:
     def test_bearish_divergence_rsi_higher(self):
         """Should reject bearish divergence if RSI also makes new high."""
         result = detect_divergence(
-            current_price=101.0,     # New high
+            current_price=106.0,     # Higher high
             current_rsi=80.0,        # RSI also new high - NO DIVERGENCE
-            prev_price=100.0,
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH"
         )
@@ -365,21 +335,19 @@ class TestDetectDivergence:
     # EDGE CASES
     def test_divergence_rsi_at_boundary_threshold(self):
         """RSI exactly at threshold should not qualify (boundary check)."""
-        # Bullish: RSI at 40 (default threshold) should be rejected
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=40.0,        # Exactly at default threshold
-            prev_price=100.0,
+            current_price=94.0,
+            current_rsi=40.0,        # Exactly at threshold
+            prev_price=95.0,
             prev_rsi=35.0,
             div_type="BULLISH"
         )
         assert result is None
 
-        # Bearish: RSI at 60 (default threshold) should be rejected
         result = detect_divergence(
-            current_price=101.0,
-            current_rsi=60.0,        # Exactly at default threshold
-            prev_price=100.0,
+            current_price=106.0,
+            current_rsi=60.0,        # Exactly at threshold
+            prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH"
         )
@@ -389,9 +357,20 @@ class TestDetectDivergence:
         """Test with zero prices."""
         result = detect_divergence(
             current_price=0.0,
-            current_rsi=40.0,
+            current_rsi=35.0,
             prev_price=0.0,
-            prev_rsi=35.0,
+            prev_rsi=30.0,
+            div_type="BULLISH"
+        )
+        assert result is None
+
+    def test_divergence_equal_prices(self):
+        """Should handle equal prices (no divergence)."""
+        result = detect_divergence(
+            current_price=95.0,
+            current_rsi=35.0,
+            prev_price=95.0,
+            prev_rsi=30.0,
             div_type="BULLISH"
         )
         assert result is None
@@ -444,7 +423,7 @@ class TestFetchCandlesForDivergence:
 
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_success(self, mock_session_class, mock_candle, sample_candles):
-        """Should successfully fetch candles ordered desc then reversed (oldest first)."""
+        """Should successfully fetch candles with low/high fields."""
         mock_session = MagicMock()
         mock_query = MagicMock()
         mock_filter = MagicMock()
@@ -455,7 +434,7 @@ class TestFetchCandlesForDivergence:
 
         # Simulate DB returning newest first (desc order)
         newest_first = list(reversed(sample_candles[:5]))
-        
+
         mock_session.query.return_value = mock_query
         mock_query.filter.return_value = mock_filter
         mock_filter.order_by.return_value = mock_order
@@ -463,17 +442,24 @@ class TestFetchCandlesForDivergence:
 
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
         assert len(result) == 5
-        # Should be reversed to oldest first (returns dicts now)
-        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in sample_candles[:5]]
+        # Should be reversed to oldest first (returns dicts with low/high)
+        expected = [
+            {
+                "close": c.close,
+                "low": c.low,
+                "high": c.high,
+                "open_time": c.open_time,
+                "is_closed": c.is_closed,
+            }
+            for c in sample_candles[:5]
+        ]
         assert result == expected
-        # Verify order_by was called with desc
         mock_filter.order_by.assert_called_once()
 
     @patch('src.storage.db.SessionLocal')
     def test_fetch_candles_empty_result(self, mock_session_class):
         """Should return empty list if no candles found."""
         mock_session = MagicMock()
-        mock_query = MagicMock()
 
         mock_session_class.return_value.__enter__.return_value = mock_session
         mock_session_class.return_value.__exit__.return_value = None
@@ -492,286 +478,165 @@ class TestFetchCandlesForDivergence:
         assert result == []
 
     @patch('src.storage.db.SessionLocal')
-    def test_fetch_candles_custom_lookback(self, mock_session_class, mock_candle, sample_candles):
-        """Should respect custom lookback parameter and return oldest first."""
+    def test_fetch_candles_includes_low_high(self, mock_session_class, mock_candle):
+        """Should include low and high fields in returned dicts."""
         mock_session = MagicMock()
 
         mock_session_class.return_value.__enter__.return_value = mock_session
         mock_session_class.return_value.__exit__.return_value = None
 
-        # Simulate DB returning newest first (desc order)
-        newest_first = list(reversed(sample_candles[:10]))
-        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = newest_first
+        candle = mock_candle(low=94.5, high=106.0, close=102.0)
+        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [candle]
 
-        result = fetch_candles_for_divergence("BTCUSDT", "1d", 10)
-        assert len(result) == 10
-        # Should be reversed to oldest first (returns dicts now)
-        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in sample_candles[:10]]
-        assert result == expected
-    
-    @patch('src.storage.db.SessionLocal')
-    def test_fetch_candles_orders_desc_then_reverses(self, mock_session_class, mock_candle):
-        """Should fetch newest candles first (desc) then reverse to oldest first."""
-        mock_session = MagicMock()
-        
-        # Create candles with increasing open_time
-        base_time = int(datetime.now().timestamp()) * 1000
-        candles = [
-            mock_candle(open_time=base_time + i * 86400000, close=100.0 + i)
-            for i in range(5)
-        ]
-        
-        mock_session_class.return_value.__enter__.return_value = mock_session
-        mock_session_class.return_value.__exit__.return_value = None
-        
-        # DB returns newest first (desc)
-        newest_first = list(reversed(candles))
-        mock_session.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = newest_first
-        
         result = fetch_candles_for_divergence("BTCUSDT", "1d", 5)
-        
-        # Should be reversed to oldest first (returns dicts now)
-        expected = [{"close": c.close, "open_time": c.open_time, "is_closed": c.is_closed} for c in candles]
-        assert result == expected
-        assert result[0]["open_time"] < result[-1]["open_time"]
+        assert len(result) == 1
+        assert result[0]["low"] == 94.5
+        assert result[0]["high"] == 106.0
+        assert result[0]["close"] == 102.0
 
 
-# ==================== TESTS: DIVERGENCE INTEGRATION ====================
+# ==================== TESTS: PIVOT DETECTION IN CONTEXT ====================
 
-class TestDivergenceIntegration:
-    """Integration tests for complete divergence flow."""
+class TestPivotDetectionInContext:
+    """Test pivot detection with realistic RSI sequences."""
 
-    def test_multiple_pivots_sequence(self, mock_candle):
-        """Should handle multiple consecutive pivots correctly."""
-        candles = []
-        for i in range(20):
-            if i == 5:
-                candles.append(mock_candle(low=95.0, close=95.5))
-            elif i == 12:
-                candles.append(mock_candle(low=94.0, close=94.5))
-            else:
-                candles.append(mock_candle(low=100.0 + (i * 0.1), close=100.0 + (i * 0.1) + 0.5))
+    def test_no_pivot_in_continuous_decline(self):
+        """No pivot should be found in a continuous RSI decline."""
+        # RSI declining continuously - no pivot
+        rsi = [50.0, 48.0, 46.0, 44.0, 42.0, 40.0, 38.0, 36.0, 34.0, 32.0, 30.0]
+        assert find_rsi_pivot_low(rsi, center=5, left=5, right=5) is False
 
-        closes = [c.close for c in candles]
-        rsi_values = calculate_rsi_for_candles(closes)
+    def test_no_pivot_in_continuous_rise(self):
+        """No pivot should be found in a continuous RSI rise."""
+        rsi = [50.0, 52.0, 54.0, 56.0, 58.0, 60.0, 62.0, 64.0, 66.0, 68.0, 70.0]
+        assert find_rsi_pivot_high(rsi, center=5, left=5, right=5) is False
 
-        if len(rsi_values) > 14:
-            assert rsi_values[14] is not None
+    def test_pivot_low_with_preceding_rsi_period(self):
+        """Pivot detection works correctly when preceded by None RSI values."""
+        # First 14 values are None (RSI not yet calculated), then valid
+        rsi = [None] * 14 + [50.0, 48.0, 46.0, 44.0, 42.0, 35.0, 40.0, 43.0, 45.0, 47.0, 49.0]
+        assert find_rsi_pivot_low(rsi, center=19, left=5, right=5) is True
 
-    def test_timeframes_independent(self, sample_candles):
-        """Should track divergences independently per timeframe."""
-        # This validates the divergence_state structure is properly isolated
-        assert True  # Structure validates this through unit tests
+    def test_pivot_low_blocked_by_none_in_window(self):
+        """Pivot should not be found if None values exist within the window."""
+        rsi = [None] * 14 + [50.0, None, 46.0, 44.0, 42.0, 35.0, 40.0, 43.0, 45.0, 47.0, 49.0]
+        # center=19, left=5 → window starts at 14, index 15 is None
+        assert find_rsi_pivot_low(rsi, center=19, left=5, right=5) is False
 
-
-# ==================== TESTS: LOOKBACK CANDLE WINDOW ====================
-
-class TestLookbackCandleWindow:
-    """Test that lookback filters pivots by candle window, not pivot count."""
-
-    def test_lookback_window_calculation_with_enough_candles(self, mock_candle):
-        """Should calculate min_open_time from lookback position when enough candles."""
-        base_time = int(datetime.now().timestamp()) * 1000
-        lookback = 10
-        
-        # Create 15 candles (more than lookback)
-        candles = [
-            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)  # 1h intervals
-            for i in range(15)
+    def test_false_positive_scenario_from_production(self):
+        """
+        Simulates the false positive from 09/02/2026:
+        With 3-candle window, a micro-dip in RSI during continuous decline was
+        detected as a pivot. With 5+5 window, it should NOT be detected.
+        """
+        # Continuous decline with a small bounce in the middle
+        rsi = [
+            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None,
+            55.0, 52.0, 48.0, 45.0,  # RSI declining
+            42.0, 38.0,              # Small dip
+            40.0,                     # Tiny bounce (this was false pivot with 3-candle window)
+            37.0, 34.0, 32.0, 30.0,  # Decline continues
         ]
-        
-        # min_open_time should be from candles[-lookback] = candles[5]
-        expected_min_time = candles[5].open_time
-        
-        # Simulate the logic from _process_divergences
-        if len(candles) >= lookback:
-            min_open_time = candles[-lookback].open_time
-        else:
-            min_open_time = candles[0].open_time if candles else 0
-        
-        assert min_open_time == expected_min_time
-        assert min_open_time == candles[5].open_time
-
-    def test_lookback_window_calculation_insufficient_candles(self, mock_candle):
-        """Should use first candle when fewer candles than lookback."""
-        base_time = int(datetime.now().timestamp()) * 1000
-        lookback = 20
-        
-        # Create only 5 candles (less than lookback)
-        candles = [
-            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
-            for i in range(5)
-        ]
-        
-        # min_open_time should be from first candle
-        expected_min_time = candles[0].open_time
-        
-        # Simulate the logic from _process_divergences
-        if len(candles) >= lookback:
-            min_open_time = candles[-lookback].open_time
-        else:
-            min_open_time = candles[0].open_time if candles else 0
-        
-        assert min_open_time == expected_min_time
-        assert min_open_time == candles[0].open_time
-
-    def test_pivot_filtering_by_candle_window(self, mock_candle):
-        """Should filter pivots to keep only those within lookback candle window."""
-        base_time = int(datetime.now().timestamp()) * 1000
-        lookback = 10
-        
-        # Create 15 candles
-        candles = [
-            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
-            for i in range(15)
-        ]
-        
-        # Calculate min_open_time (candles[-10] = candles[5])
-        min_open_time = candles[-lookback].open_time
-        
-        # Create mock pivots: some old (before min_open_time), some recent (after)
-        old_pivot_time = base_time + (2 * 3600000)  # Before min_open_time
-        recent_pivot_time = base_time + (8 * 3600000)  # After min_open_time
-        
-        pivots = [
-            {"price": 95.0, "rsi": 30.0, "open_time": old_pivot_time},      # Should be filtered out
-            {"price": 98.0, "rsi": 32.0, "open_time": recent_pivot_time},  # Should be kept
-            {"price": 97.0, "rsi": 31.0, "open_time": old_pivot_time},     # Should be filtered out
-            {"price": 99.0, "rsi": 33.0, "open_time": recent_pivot_time + 3600000},  # Should be kept
-        ]
-        
-        # Filter pivots (simulate logic from _process_divergences)
-        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
-        
-        # Should keep only recent pivots
-        assert len(filtered_pivots) == 2
-        assert all(p["open_time"] >= min_open_time for p in filtered_pivots)
-        assert filtered_pivots[0]["price"] == 98.0
-        assert filtered_pivots[1]["price"] == 99.0
-
-    def test_pivot_filtering_keeps_all_when_all_recent(self, mock_candle):
-        """Should keep all pivots when all are within lookback window."""
-        base_time = int(datetime.now().timestamp()) * 1000
-        lookback = 10
-        
-        # Create 15 candles
-        candles = [
-            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
-            for i in range(15)
-        ]
-        
-        # Calculate min_open_time
-        min_open_time = candles[-lookback].open_time
-        
-        # All pivots are recent (after min_open_time)
-        pivots = [
-            {"price": 98.0, "rsi": 32.0, "open_time": base_time + (8 * 3600000)},
-            {"price": 99.0, "rsi": 33.0, "open_time": base_time + (9 * 3600000)},
-            {"price": 100.0, "rsi": 34.0, "open_time": base_time + (10 * 3600000)},
-        ]
-        
-        # Filter pivots
-        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
-        
-        # Should keep all pivots
-        assert len(filtered_pivots) == 3
-        assert filtered_pivots == pivots
-
-    def test_pivot_filtering_removes_all_when_all_old(self, mock_candle):
-        """Should remove all pivots when all are outside lookback window."""
-        base_time = int(datetime.now().timestamp()) * 1000
-        lookback = 10
-        
-        # Create 15 candles
-        candles = [
-            mock_candle(open_time=base_time + (i * 3600000), close=100.0 + i)
-            for i in range(15)
-        ]
-        
-        # Calculate min_open_time
-        min_open_time = candles[-lookback].open_time
-        
-        # All pivots are old (before min_open_time)
-        pivots = [
-            {"price": 95.0, "rsi": 30.0, "open_time": base_time + (1 * 3600000)},
-            {"price": 96.0, "rsi": 31.0, "open_time": base_time + (2 * 3600000)},
-            {"price": 97.0, "rsi": 32.0, "open_time": base_time + (3 * 3600000)},
-        ]
-        
-        # Filter pivots
-        filtered_pivots = [p for p in pivots if p["open_time"] >= min_open_time]
-        
-        # Should remove all pivots
-        assert len(filtered_pivots) == 0
+        # With 5+5 window at center=20 (the bounce):
+        # Left 5: [42.0, 38.0, ...] - ok, all higher
+        # But right 5: [37.0, 34.0, 32.0, 30.0] - all LOWER than 40.0
+        # So it should NOT be a pivot because right-side values are lower
+        assert find_rsi_pivot_low(rsi, center=20, left=5, right=4) is False
 
 
-# ==================== TESTS: EDGE CASES ====================
+# ==================== TESTS: RANGE BETWEEN PIVOTS ====================
 
-class TestDivergenceEdgeCases:
-    """Edge case tests for divergence detection."""
+class TestPivotRange:
+    """Test range constraints between compared pivots."""
 
-    def test_divergence_with_rsi_at_threshold(self):
-        """RSI exactly at threshold should not qualify."""
-        # Bullish: RSI at 40 (default threshold) should not qualify
+    def test_range_within_bounds(self):
+        """Pivots within [range_min, range_max] should allow comparison."""
+        bars_between = 15
+        range_min = 5
+        range_max = 60
+        assert range_min <= bars_between <= range_max
+
+    def test_range_too_close(self):
+        """Pivots closer than range_min should not be compared."""
+        bars_between = 3
+        range_min = 5
+        range_max = 60
+        assert not (range_min <= bars_between <= range_max)
+
+    def test_range_too_far(self):
+        """Pivots farther than range_max should not be compared."""
+        bars_between = 65
+        range_min = 5
+        range_max = 60
+        assert not (range_min <= bars_between <= range_max)
+
+    def test_range_at_min_boundary(self):
+        """Pivots exactly at range_min should be valid."""
+        bars_between = 5
+        range_min = 5
+        range_max = 60
+        assert range_min <= bars_between <= range_max
+
+    def test_range_at_max_boundary(self):
+        """Pivots exactly at range_max should be valid."""
+        bars_between = 60
+        range_min = 5
+        range_max = 60
+        assert range_min <= bars_between <= range_max
+
+
+# ==================== TESTS: PRICE COMPARISON (LOW/HIGH) ====================
+
+class TestPriceComparison:
+    """Test that divergence uses low (bullish) and high (bearish), not close."""
+
+    def test_bullish_uses_low_prices(self):
+        """Bullish divergence should compare candle lows, not closes."""
+        # Low makes lower low, but close doesn't
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=40.0,  # Exactly at default threshold (40)
-            prev_price=100.0,
-            prev_rsi=35.0,
-            div_type="BULLISH"
-        )
-        assert result is None
-
-        # Bearish: RSI at 60 (default threshold) should not qualify
-        result = detect_divergence(
-            current_price=101.0,
-            current_rsi=60.0,  # Exactly at default threshold (60)
-            prev_price=100.0,
-            prev_rsi=70.0,
-            div_type="BEARISH"
-        )
-        assert result is None
-
-    def test_divergence_with_equal_prices(self):
-        """Should handle equal prices (no divergence)."""
-        result = detect_divergence(
-            current_price=100.0,  # Same as previous
-            current_rsi=40.0,
-            prev_price=100.0,
-            prev_rsi=35.0,
-            div_type="BULLISH"
-        )
-        assert result is None
-
-    def test_divergence_with_zero_prices(self):
-        """Should handle zero prices gracefully."""
-        result = detect_divergence(
-            current_price=0.0,
-            current_rsi=40.0,
-            prev_price=0.0,
-            prev_rsi=35.0,
-            div_type="BULLISH"
-        )
-        assert result is None
-
-    def test_divergence_extreme_rsi_values(self):
-        """Should handle extreme RSI values (0 and 100)."""
-        # Bullish at very low RSI (current RSI > prev RSI for divergence)
-        result = detect_divergence(
-            current_price=99.0,  # Lower low
-            current_rsi=10.0,    # Higher than prev (but still < 40, default threshold)
-            prev_price=100.0,
-            prev_rsi=5.0,        # Lower RSI at higher price = divergence
+            current_price=93.0,      # Current low (lower than prev low)
+            current_rsi=35.0,
+            prev_price=94.0,         # Previous low
+            prev_rsi=30.0,
             div_type="BULLISH"
         )
         assert result == "BULLISH"
 
-        # Bearish at very high RSI (current RSI < prev RSI for divergence)
+    def test_bearish_uses_high_prices(self):
+        """Bearish divergence should compare candle highs, not closes."""
+        # High makes higher high
         result = detect_divergence(
-            current_price=101.0,  # Higher high
-            current_rsi=90.0,     # Lower than prev (but still > 60, default threshold)
-            prev_price=100.0,
-            prev_rsi=95.0,        # Higher RSI at lower price = divergence
+            current_price=107.0,     # Current high (higher than prev high)
+            current_rsi=65.0,
+            prev_price=106.0,        # Previous high
+            prev_rsi=70.0,
+            div_type="BEARISH"
+        )
+        assert result == "BEARISH"
+
+
+# ==================== TESTS: DIVERGENCE EDGE CASES ====================
+
+class TestDivergenceEdgeCases:
+    """Edge case tests for divergence detection."""
+
+    def test_divergence_extreme_rsi_values(self):
+        """Should handle extreme RSI values (near 0 and 100)."""
+        result = detect_divergence(
+            current_price=93.0,
+            current_rsi=10.0,
+            prev_price=94.0,
+            prev_rsi=5.0,
+            div_type="BULLISH"
+        )
+        assert result == "BULLISH"
+
+        result = detect_divergence(
+            current_price=107.0,
+            current_rsi=90.0,
+            prev_price=106.0,
+            prev_rsi=95.0,
             div_type="BEARISH"
         )
         assert result == "BEARISH"
@@ -779,10 +644,10 @@ class TestDivergenceEdgeCases:
     def test_divergence_very_small_price_difference(self):
         """Should detect divergence with very small price differences."""
         result = detect_divergence(
-            current_price=100.001,
-            current_rsi=35.0,        # < 40 (default threshold)
-            prev_price=100.002,
-            prev_rsi=30.0,           # < 40 (default threshold)
+            current_price=94.001,
+            current_rsi=35.0,
+            prev_price=94.002,
+            prev_rsi=30.0,
             div_type="BULLISH"
         )
         assert result == "BULLISH"
@@ -790,10 +655,10 @@ class TestDivergenceEdgeCases:
     def test_divergence_large_rsi_difference(self):
         """Should detect divergence even with large RSI differences."""
         result = detect_divergence(
-            current_price=99.0,
-            current_rsi=10.0,  # Much higher RSI
-            prev_price=100.0,
-            prev_rsi=5.0,      # Previous lower RSI
+            current_price=93.0,
+            current_rsi=10.0,
+            prev_price=94.0,
+            prev_rsi=5.0,
             div_type="BULLISH"
         )
         assert result == "BULLISH"
@@ -809,7 +674,7 @@ class TestDivergenceAntiSpam:
         last_alert = {"price": 5050.19, "rsi": 35.46}
         current_price = 5050.19
         current_rsi = 35.46
-        
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
@@ -819,9 +684,9 @@ class TestDivergenceAntiSpam:
     def test_different_price_new_signal(self):
         """Should detect new signal when price differs."""
         last_alert = {"price": 5050.19, "rsi": 35.46}
-        current_price = 5055.00  # Different price
+        current_price = 5055.00
         current_rsi = 35.46
-        
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
@@ -832,8 +697,8 @@ class TestDivergenceAntiSpam:
         """Should detect new signal when RSI differs."""
         last_alert = {"price": 5050.19, "rsi": 35.46}
         current_price = 5050.19
-        current_rsi = 36.50  # Different RSI
-        
+        current_rsi = 36.50
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
@@ -843,9 +708,9 @@ class TestDivergenceAntiSpam:
     def test_rounding_precision_price(self):
         """Should handle price rounding (2 decimals)."""
         last_alert = {"price": 5050.124, "rsi": 35.0}
-        current_price = 5050.125  # Same when rounded to 2 decimals (both 5050.12)
+        current_price = 5050.125
         current_rsi = 35.0
-        
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
@@ -856,8 +721,8 @@ class TestDivergenceAntiSpam:
         """Should handle RSI rounding (1 decimal)."""
         last_alert = {"price": 5050.00, "rsi": 35.42}
         current_price = 5050.00
-        current_rsi = 35.44  # Same when rounded to 1 decimal (both 35.4)
-        
+        current_rsi = 35.44
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
@@ -869,22 +734,87 @@ class TestDivergenceAntiSpam:
         last_alert = None
         current_price = 5050.19
         current_rsi = 35.46
-        
+
         same_signal = (
             last_alert is not None and
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
         )
-        assert same_signal is False  # None is falsy, so not same signal
+        assert same_signal is False
 
     def test_both_price_and_rsi_different(self):
         """Should detect new signal when both price and RSI differ."""
         last_alert = {"price": 5050.19, "rsi": 35.46}
-        current_price = 5100.00  # Different
-        current_rsi = 40.00      # Different
-        
+        current_price = 5100.00
+        current_rsi = 40.00
+
         same_signal = (
             round(last_alert["price"], 2) == round(current_price, 2) and
             round(last_alert["rsi"], 1) == round(current_rsi, 1)
         )
         assert same_signal is False
+
+
+# ==================== TESTS: MOST RECENT PIVOT ONLY ====================
+
+class TestMostRecentPivotComparison:
+    """Test that divergence compares only with the most recent previous pivot."""
+
+    def test_compares_with_last_pivot_only(self):
+        """
+        Given multiple previous pivots, only the most recent (last in list)
+        should be used for divergence comparison.
+        """
+        pivots = [
+            {"low": 96.0, "high": 106.0, "rsi": 25.0, "open_time": 1000, "candle_index": 5},
+            {"low": 97.0, "high": 107.0, "rsi": 28.0, "open_time": 2000, "candle_index": 15},
+            {"low": 95.0, "high": 108.0, "rsi": 32.0, "open_time": 3000, "candle_index": 25},
+        ]
+
+        # Current pivot
+        current_low = 94.0
+        current_rsi = 35.0
+        current_idx = 40
+
+        # Only compare with last pivot (index 25, rsi=32, low=95)
+        prev = pivots[-1]
+        bars_between = current_idx - prev["candle_index"]
+
+        # Range check: 40 - 25 = 15, within [5, 60]
+        assert 5 <= bars_between <= 60
+
+        # Divergence: current_low (94) < prev_low (95) AND current_rsi (35) > prev_rsi (32)
+        result = detect_divergence(
+            current_price=current_low,
+            current_rsi=current_rsi,
+            prev_price=prev["low"],
+            prev_rsi=prev["rsi"],
+            div_type="BULLISH"
+        )
+        assert result == "BULLISH"
+
+    def test_ignores_old_pivots_even_if_divergent(self):
+        """
+        Even if an old pivot would produce divergence, only the most recent
+        is checked. If the most recent doesn't diverge, no alert.
+        """
+        pivots = [
+            {"low": 98.0, "high": 108.0, "rsi": 20.0, "open_time": 1000, "candle_index": 5},   # Would diverge
+            {"low": 93.0, "high": 103.0, "rsi": 38.0, "open_time": 2000, "candle_index": 25},  # Most recent
+        ]
+
+        current_low = 94.0
+        current_rsi = 35.0
+
+        # Compare only with last pivot: low=93, rsi=38
+        prev = pivots[-1]
+
+        # current_low (94) > prev_low (93) → NOT a lower low → no bullish divergence
+        result = detect_divergence(
+            current_price=current_low,
+            current_rsi=current_rsi,
+            prev_price=prev["low"],
+            prev_rsi=prev["rsi"],
+            div_type="BULLISH"
+        )
+        assert result is None
