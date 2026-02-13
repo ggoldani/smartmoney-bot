@@ -19,6 +19,7 @@ from src.indicators.divergence import (
 )
 from src.notif.templates import template_divergence
 from src.telegram_bot import send_message_async
+from src.utils.timeframes import interval_to_ms
 
 
 class DivergenceProcessor:
@@ -27,7 +28,7 @@ class DivergenceProcessor:
     def __init__(self):
         # Divergence state tracking per (symbol, interval)
         # key: "BTCUSDT_4h", value: {"bullish": [...], "bearish": [...]}
-        # Each pivot: {"low", "high", "rsi", "open_time", "candle_index"}
+        # Each pivot: {"low", "high", "rsi", "open_time"}
         self.divergence_state: Dict[str, Dict[str, list]] = {}
 
         # Anti-spam: track last divergence alert per symbol/interval/type
@@ -106,12 +107,12 @@ class DivergenceProcessor:
                                 "high": candles[i]["high"],
                                 "rsi": rsi_values[i],
                                 "open_time": candles[i]["open_time"],
-                                "candle_index": i,
                             })
                             if debug_enabled:
                                 logger.debug(
                                     f"[INIT] Bullish pivot {symbol} {interval}: "
-                                    f"low={candles[i]['low']}, rsi={rsi_values[i]:.1f}, idx={i}"
+                                    f"low={candles[i]['low']}, rsi={rsi_values[i]:.1f}, "
+                                    f"open_time={candles[i]['open_time']}"
                                 )
 
                         if find_rsi_pivot_high(rsi_values, i, pivot_left, pivot_right):
@@ -120,12 +121,12 @@ class DivergenceProcessor:
                                 "high": candles[i]["high"],
                                 "rsi": rsi_values[i],
                                 "open_time": candles[i]["open_time"],
-                                "candle_index": i,
                             })
                             if debug_enabled:
                                 logger.debug(
                                     f"[INIT] Bearish pivot {symbol} {interval}: "
-                                    f"high={candles[i]['high']}, rsi={rsi_values[i]:.1f}, idx={i}"
+                                    f"high={candles[i]['high']}, rsi={rsi_values[i]:.1f}, "
+                                    f"open_time={candles[i]['open_time']}"
                                 )
 
                     if debug_enabled:
@@ -214,7 +215,6 @@ class DivergenceProcessor:
                     state=state,
                     candle=center_candle,
                     rsi=rsi_values[center_idx],
-                    candle_index=center_idx,
                     symbol=symbol,
                     interval=interval,
                     pivot_range_min=pivot_range_min,
@@ -232,7 +232,6 @@ class DivergenceProcessor:
                     state=state,
                     candle=center_candle,
                     rsi=rsi_values[center_idx],
-                    candle_index=center_idx,
                     symbol=symbol,
                     interval=interval,
                     pivot_range_min=pivot_range_min,
@@ -252,7 +251,6 @@ class DivergenceProcessor:
         state: Dict[str, list],
         candle: dict,
         rsi: Optional[float],
-        candle_index: int,
         symbol: str,
         interval: str,
         pivot_range_min: int,
@@ -267,9 +265,13 @@ class DivergenceProcessor:
         Compares the current pivot ONLY with the most recent previous pivot,
         checking that the distance is within [pivot_range_min, pivot_range_max].
         Uses low (bullish) or high (bearish) for price comparison.
+        Distance between pivots is calculated using open_time (absolute timestamps)
+        divided by the interval duration in ms, avoiding batch-relative index drift.
         """
         if rsi is None:
             return
+
+        current_open_time = candle["open_time"]
 
         # Price to compare: low for bullish, high for bearish (TradingView-style)
         current_price = candle["low"] if div_type == "BULLISH" else candle["high"]
@@ -280,7 +282,9 @@ class DivergenceProcessor:
 
         if prev_pivots:
             prev = prev_pivots[-1]
-            bars_between = candle_index - prev["candle_index"]
+            # Calculate bar distance using absolute timestamps (immune to batch drift)
+            ms_per_bar = interval_to_ms(interval)
+            bars_between = (current_open_time - prev["open_time"]) // ms_per_bar
 
             if pivot_range_min <= bars_between <= pivot_range_max:
                 prev_price = prev["low"] if div_type == "BULLISH" else prev["high"]
@@ -298,8 +302,10 @@ class DivergenceProcessor:
                     if debug_enabled:
                         logger.debug(
                             f"[DIVERGENCE] {div_type} {symbol} {interval}: "
-                            f"current(price={current_price}, rsi={rsi:.1f}, idx={candle_index}) vs "
-                            f"prev(price={prev_price}, rsi={prev['rsi']:.1f}, idx={prev['candle_index']}), "
+                            f"current(price={current_price}, rsi={rsi:.1f}, "
+                            f"open_time={current_open_time}) vs "
+                            f"prev(price={prev_price}, rsi={prev['rsi']:.1f}, "
+                            f"open_time={prev['open_time']}), "
                             f"bars_between={bars_between}"
                         )
             elif debug_enabled:
@@ -336,14 +342,13 @@ class DivergenceProcessor:
             "high": candle["high"],
             "rsi": rsi,
             "open_time": candle["open_time"],
-            "candle_index": candle_index,
         })
 
         if debug_enabled:
             logger.debug(
                 f"[PIVOT] {div_type} pivot added {symbol} {interval}: "
                 f"low={candle['low']}, high={candle['high']}, rsi={rsi:.1f}, "
-                f"idx={candle_index}, total_pivots={len(state[state_key])}"
+                f"open_time={candle['open_time']}, total_pivots={len(state[state_key])}"
             )
 
     async def _send_alert(

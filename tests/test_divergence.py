@@ -764,23 +764,27 @@ class TestMostRecentPivotComparison:
         """
         Given multiple previous pivots, only the most recent (last in list)
         should be used for divergence comparison.
+        Uses open_time for bar distance calculation (4h = 14_400_000 ms).
         """
+        # 4h candles: open_time spaced by 14_400_000 ms per bar
+        ms_4h = 14_400_000
         pivots = [
-            {"low": 96.0, "high": 106.0, "rsi": 25.0, "open_time": 1000, "candle_index": 5},
-            {"low": 97.0, "high": 107.0, "rsi": 28.0, "open_time": 2000, "candle_index": 15},
-            {"low": 95.0, "high": 108.0, "rsi": 32.0, "open_time": 3000, "candle_index": 25},
+            {"low": 96.0, "high": 106.0, "rsi": 25.0, "open_time": 5 * ms_4h},
+            {"low": 97.0, "high": 107.0, "rsi": 28.0, "open_time": 15 * ms_4h},
+            {"low": 95.0, "high": 108.0, "rsi": 32.0, "open_time": 25 * ms_4h},
         ]
 
-        # Current pivot
+        # Current pivot at bar 40
         current_low = 94.0
         current_rsi = 35.0
-        current_idx = 40
+        current_open_time = 40 * ms_4h
 
-        # Only compare with last pivot (index 25, rsi=32, low=95)
+        # Only compare with last pivot (bar 25, rsi=32, low=95)
         prev = pivots[-1]
-        bars_between = current_idx - prev["candle_index"]
+        bars_between = (current_open_time - prev["open_time"]) // ms_4h
 
         # Range check: 40 - 25 = 15, within [5, 60]
+        assert bars_between == 15
         assert 5 <= bars_between <= 60
 
         # Divergence: current_low (94) < prev_low (95) AND current_rsi (35) > prev_rsi (32)
@@ -798,9 +802,10 @@ class TestMostRecentPivotComparison:
         Even if an old pivot would produce divergence, only the most recent
         is checked. If the most recent doesn't diverge, no alert.
         """
+        ms_4h = 14_400_000
         pivots = [
-            {"low": 98.0, "high": 108.0, "rsi": 20.0, "open_time": 1000, "candle_index": 5},   # Would diverge
-            {"low": 93.0, "high": 103.0, "rsi": 38.0, "open_time": 2000, "candle_index": 25},  # Most recent
+            {"low": 98.0, "high": 108.0, "rsi": 20.0, "open_time": 5 * ms_4h},   # Would diverge
+            {"low": 93.0, "high": 103.0, "rsi": 38.0, "open_time": 25 * ms_4h},  # Most recent
         ]
 
         current_low = 94.0
@@ -818,3 +823,26 @@ class TestMostRecentPivotComparison:
             div_type="BULLISH"
         )
         assert result is None
+
+    def test_cross_batch_bars_between_calculation(self):
+        """
+        Validates that bars_between is correct even when pivots come from
+        different candle batches (the bug that candle_index had).
+
+        Scenario: pivot A found during init (batch [c0..c79]),
+        pivot B found during process() (batch [c20..c99]).
+        With candle_index both would have similar relative positions,
+        but with open_time the distance is always correct.
+        """
+        ms_4h = 14_400_000
+
+        # Pivot A: found at candle c50 (open_time = 50 * 4h)
+        pivot_a_open_time = 50 * ms_4h
+        # Pivot B: found at candle c65 (open_time = 65 * 4h)
+        pivot_b_open_time = 65 * ms_4h
+
+        bars_between = (pivot_b_open_time - pivot_a_open_time) // ms_4h
+
+        # Always 15 bars regardless of which batch each came from
+        assert bars_between == 15
+        assert 5 <= bars_between <= 60
