@@ -177,58 +177,34 @@ class TestDetectDivergence:
         """Should detect valid bullish divergence (lower low, higher RSI)."""
         result = detect_divergence(
             current_price=94.0,      # Lower low
-            current_rsi=35.0,        # Higher RSI (< 40)
+            current_rsi=35.0,        # Higher RSI
             prev_price=95.0,         # Previous low
-            prev_rsi=30.0,           # Previous RSI (< 40)
+            prev_rsi=30.0,           # Previous RSI
             div_type="BULLISH"
         )
         assert result == "BULLISH"
 
     def test_bullish_divergence_rsi_above_threshold(self):
-        """Should reject bullish divergence if current RSI >= threshold (default 40)."""
+        """Should NOW detect bullish divergence even if RSI >= threshold (e.g. 40)."""
         result = detect_divergence(
             current_price=94.0,
-            current_rsi=40.1,        # > 40 - INVALID
+            current_rsi=42.0,        # > 40 - WAS INVALID, NOW VALID
             prev_price=95.0,
             prev_rsi=35.0,
             div_type="BULLISH"
-        )
-        assert result is None
-
-    def test_bullish_divergence_prev_rsi_above_threshold(self):
-        """Should reject bullish divergence if previous RSI >= threshold (default 40)."""
-        result = detect_divergence(
-            current_price=94.0,
-            current_rsi=35.0,
-            prev_price=95.0,
-            prev_rsi=40.1,           # > 40 - INVALID
-            div_type="BULLISH"
-        )
-        assert result is None
-
-    def test_bullish_divergence_custom_threshold(self):
-        """Should respect custom bullish_rsi_max threshold."""
-        result = detect_divergence(
-            current_price=94.0,
-            current_rsi=45.0,        # < 50 (custom)
-            prev_price=95.0,
-            prev_rsi=35.0,
-            div_type="BULLISH",
-            bullish_rsi_max=50
         )
         assert result == "BULLISH"
 
-    def test_bullish_divergence_custom_threshold_reject(self):
-        """Should reject with custom threshold if RSI >= threshold."""
+    def test_bullish_divergence_prev_rsi_above_threshold(self):
+        """Should NOW detect bullish divergence even if prev RSI >= threshold."""
         result = detect_divergence(
             current_price=94.0,
-            current_rsi=50.1,        # > 50 - INVALID
+            current_rsi=45.0,
             prev_price=95.0,
-            prev_rsi=35.0,
-            div_type="BULLISH",
-            bullish_rsi_max=50
+            prev_rsi=42.0,           # > 40 - WAS INVALID, NOW VALID
+            div_type="BULLISH"
         )
-        assert result is None
+        assert result == "BULLISH"
 
     def test_bullish_divergence_price_not_lower(self):
         """Should reject bullish divergence if price not lower."""
@@ -257,58 +233,34 @@ class TestDetectDivergence:
         """Should detect valid bearish divergence (higher high, lower RSI)."""
         result = detect_divergence(
             current_price=106.0,     # Higher high
-            current_rsi=65.0,        # Lower RSI (> 60)
+            current_rsi=65.0,        # Lower RSI
             prev_price=105.0,        # Previous high
-            prev_rsi=70.0,           # Previous RSI (> 60)
+            prev_rsi=70.0,           # Previous RSI
             div_type="BEARISH"
         )
         assert result == "BEARISH"
 
     def test_bearish_divergence_rsi_below_threshold(self):
-        """Should reject bearish divergence if current RSI <= threshold (default 60)."""
+        """Should NOW detect bearish divergence even if RSI <= threshold (e.g. 60)."""
         result = detect_divergence(
             current_price=106.0,
-            current_rsi=59.9,        # < 60 - INVALID
+            current_rsi=58.0,        # < 60 - WAS INVALID, NOW VALID
             prev_price=105.0,
             prev_rsi=75.0,
             div_type="BEARISH"
-        )
-        assert result is None
-
-    def test_bearish_divergence_prev_rsi_below_threshold(self):
-        """Should reject bearish divergence if previous RSI <= threshold (default 60)."""
-        result = detect_divergence(
-            current_price=106.0,
-            current_rsi=65.0,
-            prev_price=105.0,
-            prev_rsi=59.9,           # < 60 - INVALID
-            div_type="BEARISH"
-        )
-        assert result is None
-
-    def test_bearish_divergence_custom_threshold(self):
-        """Should respect custom bearish_rsi_min threshold."""
-        result = detect_divergence(
-            current_price=106.0,
-            current_rsi=55.0,        # > 50 (custom)
-            prev_price=105.0,
-            prev_rsi=75.0,
-            div_type="BEARISH",
-            bearish_rsi_min=50
         )
         assert result == "BEARISH"
 
-    def test_bearish_divergence_custom_threshold_reject(self):
-        """Should reject with custom threshold if RSI <= threshold."""
+    def test_bearish_divergence_prev_rsi_below_threshold(self):
+        """Should NOW detect bearish divergence even if prev RSI <= threshold."""
         result = detect_divergence(
             current_price=106.0,
-            current_rsi=49.9,        # < 50 - INVALID
+            current_rsi=55.0,
             prev_price=105.0,
-            prev_rsi=75.0,
-            div_type="BEARISH",
-            bearish_rsi_min=50
+            prev_rsi=58.0,           # < 60 - WAS INVALID, NOW VALID
+            div_type="BEARISH"
         )
-        assert result is None
+        assert result == "BEARISH"
 
     def test_bearish_divergence_price_not_higher(self):
         """Should reject bearish divergence if price not higher."""
@@ -333,26 +285,6 @@ class TestDetectDivergence:
         assert result is None
 
     # EDGE CASES
-    def test_divergence_rsi_at_boundary_threshold(self):
-        """RSI exactly at threshold should not qualify (boundary check)."""
-        result = detect_divergence(
-            current_price=94.0,
-            current_rsi=40.0,        # Exactly at threshold
-            prev_price=95.0,
-            prev_rsi=35.0,
-            div_type="BULLISH"
-        )
-        assert result is None
-
-        result = detect_divergence(
-            current_price=106.0,
-            current_rsi=60.0,        # Exactly at threshold
-            prev_price=105.0,
-            prev_rsi=75.0,
-            div_type="BEARISH"
-        )
-        assert result is None
-
     def test_divergence_zero_prices(self):
         """Test with zero prices."""
         result = detect_divergence(
