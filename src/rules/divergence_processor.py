@@ -166,8 +166,6 @@ class DivergenceProcessor:
         try:
             lookback = divergence_config.get("lookback", 80)
             debug_enabled = divergence_config.get("debug_divergence", False)
-            bullish_rsi_max = divergence_config.get("bullish_rsi_max", 40)
-            bearish_rsi_min = divergence_config.get("bearish_rsi_min", 60)
 
             pivot_cfg = self._get_pivot_config()
             pivot_left = pivot_cfg["pivot_left"]
@@ -219,8 +217,6 @@ class DivergenceProcessor:
                     interval=interval,
                     pivot_range_min=pivot_range_min,
                     pivot_range_max=pivot_range_max,
-                    bullish_rsi_max=bullish_rsi_max,
-                    bearish_rsi_min=bearish_rsi_min,
                     debug_enabled=debug_enabled,
                 )
 
@@ -236,8 +232,6 @@ class DivergenceProcessor:
                     interval=interval,
                     pivot_range_min=pivot_range_min,
                     pivot_range_max=pivot_range_max,
-                    bullish_rsi_max=bullish_rsi_max,
-                    bearish_rsi_min=bearish_rsi_min,
                     debug_enabled=debug_enabled,
                 )
 
@@ -255,8 +249,6 @@ class DivergenceProcessor:
         interval: str,
         pivot_range_min: int,
         pivot_range_max: int,
-        bullish_rsi_max: float = 40,
-        bearish_rsi_min: float = 60,
         debug_enabled: bool = False,
     ) -> None:
         """
@@ -294,8 +286,6 @@ class DivergenceProcessor:
                     prev_price=prev_price,
                     prev_rsi=prev["rsi"],
                     div_type=div_type,
-                    bullish_rsi_max=bullish_rsi_max,
-                    bearish_rsi_min=bearish_rsi_min,
                 )
                 if result:
                     divergence_detected = True
