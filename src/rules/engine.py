@@ -21,8 +21,7 @@ from src.config import (
     is_indicator_enabled,
     get_rsi_config,
     get_breakout_config,
-    get_alert_config,
-    get_divergence_config
+    get_alert_config
 )
 from src.indicators.rsi import analyze_rsi, analyze_rsi_all_timeframes
 from src.indicators.breakouts import check_breakout
