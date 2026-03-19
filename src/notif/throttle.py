@@ -3,7 +3,7 @@
 Alert throttling and circuit breaker to prevent spam.
 Tracks alert history and enforces rate limits.
 """
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from datetime import datetime, timedelta, timezone
 from collections import deque
 from dataclasses import dataclass, field

@@ -37,7 +37,7 @@ from src.notif.templates import (
     template_mega_alert
 )
 from src.notif.throttle import get_throttler
-from src.telegram_bot import send_message, send_message_async
+from src.telegram_bot import send_message_async
 from src.storage.db import SessionLocal
 from src.storage.models import Candle
 
@@ -308,7 +308,8 @@ class AlertEngine:
         # Must return to recovery zone to reset
         return True
 
-    def _check_throttle_and_mark(self, condition_key: str, alert_key: str) -> bool:
+    def _check_throttle_and_mark(self, condition_key: str, alert_key: str,
+                                 tracker_key: str = None, condition: str = None) -> bool:
         """
         Check if alert is throttled and mark as alerted if so.
         Returns True if can send, False if throttled.
@@ -319,6 +320,11 @@ class AlertEngine:
             # Mark as alerted to prevent retry on next cycle
             self.alerted_candles[alert_key] = True
             self.alerted_candles_with_timestamp[alert_key] = time.time()
+
+            # Mark last_condition to activate anti-spam/recovery logic even when throttled
+            if tracker_key and condition:
+                self.last_condition[tracker_key] = condition
+
             return False
         return True
 
@@ -425,7 +431,7 @@ class AlertEngine:
 
         # Check throttle (and mark as alerted if throttled)
         condition_key = f"RSI_{current_condition}_{interval}"
-        if not self._check_throttle_and_mark(condition_key, alert_key):
+        if not self._check_throttle_and_mark(condition_key, alert_key, condition_tracker_key, current_condition):
             return
 
         # Collect alert using helper (marks as alerted and adds to pending queue)
@@ -494,7 +500,7 @@ class AlertEngine:
 
         # Check throttle (and mark as alerted if throttled)
         condition_key = f"BREAKOUT_{current_breakout_type}_{interval}"
-        if not self._check_throttle_and_mark(condition_key, alert_key):
+        if not self._check_throttle_and_mark(condition_key, alert_key, condition_tracker_key, current_breakout_type):
             return
 
         # Collect alert using helper (marks as alerted and adds to pending queue)
@@ -648,9 +654,7 @@ class AlertEngine:
         hourly_count = self.throttler.global_history.count_in_last_hour()
         if hourly_count >= self.throttler.max_alerts_per_hour:
             logger.warning(f"Hourly limit reached ({hourly_count}), discarding {len(self.pending_alerts)} pending")
-            # Update last_condition to activate anti-spam (prevents re-detection)
-            for alert in self.pending_alerts:
-                self.last_condition[alert['tracker_key']] = alert['condition']
+            # last_condition already marked during collection, no need to update here
             # DO NOT clear alerted_candles - flags remain to prevent spam
             # Flags will be cleaned up by TTL cleanup (1h) or when new candle starts
             self.pending_alerts = []
@@ -681,13 +685,12 @@ class AlertEngine:
         if success:
             # Update state AFTER successful send
             self.throttler.record_alert(alert['condition_key'])
-            self.last_condition[alert['tracker_key']] = alert['condition']
+            # last_condition already marked during collection
             logger.info(f"Alert sent: {alert['type']} {alert['condition']}")
         else:
-            # Send failed: update last_condition to activate anti-spam (prevents infinite retry loop)
+            # Send failed: last_condition already marked during collection, activating anti-spam
             # Alert is lost (no automatic retry) - admin should check logs and fix network/Telegram issue
             logger.error(f"Failed to send alert: {alert['type']} {alert['condition']} - alert discarded, anti-spam activated")
-            self.last_condition[alert['tracker_key']] = alert['condition']
 
         return success
 
@@ -700,14 +703,12 @@ class AlertEngine:
             # Update state AFTER successful send
             for alert in alerts:
                 self.throttler.record_alert(alert['condition_key'])
-                self.last_condition[alert['tracker_key']] = alert['condition']
+                # last_condition already marked during collection
             logger.info(f"Mega-alert sent: {len(alerts)} alerts consolidated")
         else:
-            # Send failed: update last_condition to activate anti-spam (prevents infinite retry loop)
+            # Send failed: last_condition already marked during collection, activating anti-spam
             # Alerts are lost (no automatic retry) - admin should check logs and fix network/Telegram issue
             logger.error(f"Failed to send mega-alert with {len(alerts)} alerts - alerts discarded, anti-spam activated")
-            for alert in alerts:
-                self.last_condition[alert['tracker_key']] = alert['condition']
 
         return success
 
