@@ -762,7 +762,8 @@ class AlertEngine:
         await run_daily_summary_loop(
             rsi_config=self.rsi_config,
             throttler=self.throttler,
-            running_flag_fn=lambda: self.running
+            running_flag_fn=lambda: self.running,
+            last_candle_fn=lambda: self.last_candle
         )
 
 
