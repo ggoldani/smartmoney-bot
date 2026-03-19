@@ -13,7 +13,6 @@ class CandleData(TypedDict):
     symbol: str
     interval: str
     open_time: int
-    open: float
     close: float
     is_closed: bool
 
@@ -74,9 +73,6 @@ class AlertEngine:
 
         # Track timestamp of alerted candles for TTL cleanup (prevent unbounded growth)
         self.alerted_candles_with_timestamp: Dict[str, float] = {}  # key: alert_key, value: timestamp
-
-        # FIX #1: Track last candle for each symbol/interval (daily summary)
-        self.last_candle: Dict[str, Dict] = {}  # key: "symbol_interval", value: {open, close, timestamp}
 
         # Load config
         self.rsi_config = get_rsi_config()
@@ -220,7 +216,6 @@ class AlertEngine:
                             "symbol": candle.symbol,
                             "interval": candle.interval,
                             "open_time": candle.open_time,
-                            "open": candle.open,
                             "close": candle.close,
                             "is_closed": candle.is_closed
                         })
@@ -568,7 +563,6 @@ class AlertEngine:
         interval = candle_data["interval"]
         open_time = candle_data["open_time"]
         current_price = candle_data["close"]
-        open_price = candle_data.get("open", current_price)  # Fallback to close if not provided
 
         logger.debug(f"Processing candle: {symbol} {interval}")
 
@@ -580,14 +574,6 @@ class AlertEngine:
 
         # NEW: Collect Divergence alerts (Risco 4: inside loop for consistency)
         await self._process_divergences(symbol, interval, open_time)
-
-        # FIX #1: Update last_candle tracking for daily summary
-        candle_key = f"{symbol}_{interval}"
-        self.last_candle[candle_key] = {
-            'open': open_price,
-            'close': current_price,
-            'timestamp': open_time
-        }
 
     async def _consolidation_timer(self):
         """Timer: send consolidated alerts every 6 seconds and cleanup old alert entries"""
@@ -766,8 +752,7 @@ class AlertEngine:
         await run_daily_summary_loop(
             rsi_config=self.rsi_config,
             throttler=self.throttler,
-            running_flag_fn=lambda: self.running,
-            last_candle=self.last_candle
+            running_flag_fn=lambda: self.running
         )
 
 
