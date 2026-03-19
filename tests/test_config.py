@@ -109,8 +109,15 @@ class TestRSIConfigValidation:
         config = get_rsi_config()
         assert config.get('period') == 14
 
-    def test_rsi_config_default_thresholds(self, test_env_vars):
+    def test_rsi_config_default_thresholds(self, test_env_vars, monkeypatch, test_config_yaml):
         """RSI config should have thresholds from test YAML."""
+        # Need to reload config to use test env vars instead of global config
+        monkeypatch.setenv('CONFIG_FILE', str(test_config_yaml))
+        from src import config as src_config
+        # We need to manually update the CONFIG_FILE module variable as os.getenv in src_config
+        # is only evaluated on first import.
+        src_config.CONFIG_FILE = str(test_config_yaml)
+        src_config.reload_config()
         config = get_rsi_config()
         assert config.get('overbought') == 70
         assert config.get('oversold') == 30

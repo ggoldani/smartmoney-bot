@@ -5,8 +5,7 @@ Implements retry logic with exponential backoff for resilience.
 
 import asyncio
 import time
-from typing import Dict, List, Optional
-
+from typing import List, Dict, Optional
 import requests
 from loguru import logger
 
