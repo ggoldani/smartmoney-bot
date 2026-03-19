@@ -1,5 +1,10 @@
 import os
 import yaml
+
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
@@ -37,11 +42,12 @@ class ConfigLoader:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
-        with open(self.config_path, 'r', encoding='utf-8') as f:
-            self._config = yaml.safe_load(f)
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            self._config = yaml.load(content, Loader=SafeLoader)
 
         # Validate required sections
-        required_sections = ['bot', 'telegram', 'symbols', 'indicators', 'alerts']
+        required_sections = ["bot", "telegram", "symbols", "indicators", "alerts"]
         for section in required_sections:
             if section not in self._config:
                 raise ValueError(f"Missing required config section: {section}")
@@ -51,7 +57,7 @@ class ConfigLoader:
         Get config value by dot-notation path.
         Example: config.get('bot.version') -> '1.0.0'
         """
-        keys = key_path.split('.')
+        keys = key_path.split(".")
         value = self._config
 
         for key in keys:
@@ -63,7 +69,7 @@ class ConfigLoader:
                 return default
 
         # Handle environment variable substitution in strings
-        if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
+        if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
             env_var = value[2:-1]
             return os.getenv(env_var, default)
 
@@ -95,38 +101,43 @@ def reload_config():
 
 # Helper functions for common config access
 def get_bot_version() -> str:
-    return get_config().get('bot.version', '1.0.0')
+    return get_config().get("bot.version", "1.0.0")
 
 
 def get_bot_tier() -> str:
-    return get_config().get('bot.tier', 'free')
+    return get_config().get("bot.tier", "free")
 
 
 def get_bot_name() -> str:
-    return get_config().get('bot.name', 'SmartMoney Bot')
+    return get_config().get("bot.name", "SmartMoney Bot")
 
 
 def get_symbols() -> List[Dict[str, Any]]:
-    return get_config().get('symbols', [])
+    return get_config().get("symbols", [])
 
 
 def get_timeframes_for_symbol(symbol: str) -> List[str]:
     """Get timeframes for specific symbol."""
     symbols = get_symbols()
     for sym_config in symbols:
-        if sym_config.get('name') == symbol:
-            return sym_config.get('timeframes', [])
+        if sym_config.get("name") == symbol:
+            return sym_config.get("timeframes", [])
     return []
 
 
 def is_indicator_enabled(indicator_name: str) -> bool:
-    return get_config().get(f'indicators.{indicator_name}.enabled', False)
+    return get_config().get(f"indicators.{indicator_name}.enabled", False)
 
 
 def _validate_numeric(
-    config: Dict, key: str, default: Any,
-    min_val: float, max_val: float,
-    cast_fn=float, compare_key: str = None, compare_op: str = None
+    config: Dict,
+    key: str,
+    default: Any,
+    min_val: float,
+    max_val: float,
+    cast_fn=float,
+    compare_key: str = None,
+    compare_op: str = None,
 ) -> None:
     """
     Validate and sanitize a numeric config value in-place.
@@ -150,10 +161,10 @@ def _validate_numeric(
         # Optional cross-field validation
         if compare_key and compare_op:
             ref = config.get(compare_key, 0)
-            if compare_op == '>' and value <= ref:
+            if compare_op == ">" and value <= ref:
                 config[key] = default
                 return
-            if compare_op == '<' and value >= ref:
+            if compare_op == "<" and value >= ref:
                 config[key] = default
                 return
         config[key] = value
@@ -163,81 +174,99 @@ def _validate_numeric(
 
 def get_rsi_config() -> Dict[str, Any]:
     """Get RSI config with validation and safe defaults."""
-    rsi_config = dict(get_config().get('indicators.rsi', {}) or {})
+    rsi_config = dict(get_config().get("indicators.rsi", {}) or {})
 
     # Validate and apply safe defaults
     if not isinstance(rsi_config, dict):
         rsi_config = {}
 
     # Ensure all critical fields exist with safe defaults
-    rsi_config.setdefault('period', 14)
-    rsi_config.setdefault('overbought', 70)
-    rsi_config.setdefault('oversold', 30)
-    rsi_config.setdefault('extreme_overbought', 75)
-    rsi_config.setdefault('extreme_oversold', 25)
-    rsi_config.setdefault('timeframes', [])
-    rsi_config.setdefault('alert_on_touch', True)
+    rsi_config.setdefault("period", 14)
+    rsi_config.setdefault("overbought", 70)
+    rsi_config.setdefault("oversold", 30)
+    rsi_config.setdefault("extreme_overbought", 75)
+    rsi_config.setdefault("extreme_oversold", 25)
+    rsi_config.setdefault("timeframes", [])
+    rsi_config.setdefault("alert_on_touch", True)
 
     # Validate thresholds (safety checks)
-    _validate_numeric(rsi_config, 'period', 14, min_val=1, max_val=101, cast_fn=int)
-    _validate_numeric(rsi_config, 'overbought', 70, min_val=50, max_val=100)
-    _validate_numeric(rsi_config, 'oversold', 30, min_val=0, max_val=50)
-    _validate_numeric(rsi_config, 'extreme_overbought', 85, min_val=0, max_val=100,
-                      compare_key='overbought', compare_op='>')
-    _validate_numeric(rsi_config, 'extreme_oversold', 15, min_val=0, max_val=100,
-                      compare_key='oversold', compare_op='<')
+    _validate_numeric(rsi_config, "period", 14, min_val=1, max_val=101, cast_fn=int)
+    _validate_numeric(rsi_config, "overbought", 70, min_val=50, max_val=100)
+    _validate_numeric(rsi_config, "oversold", 30, min_val=0, max_val=50)
+    _validate_numeric(
+        rsi_config,
+        "extreme_overbought",
+        85,
+        min_val=0,
+        max_val=100,
+        compare_key="overbought",
+        compare_op=">",
+    )
+    _validate_numeric(
+        rsi_config,
+        "extreme_oversold",
+        15,
+        min_val=0,
+        max_val=100,
+        compare_key="oversold",
+        compare_op="<",
+    )
 
     return rsi_config
 
 
 def get_breakout_config() -> Dict[str, Any]:
-    return get_config().get('indicators.breakout', {})
+    return get_config().get("indicators.breakout", {})
 
 
 def get_alert_config() -> Dict[str, Any]:
-    return get_config().get('alerts', {})
+    return get_config().get("alerts", {})
 
 
 def should_send_startup_message() -> bool:
-    return get_config().get('telegram.startup_message', True)
+    return get_config().get("telegram.startup_message", True)
 
 
 def should_send_shutdown_message() -> bool:
-    return get_config().get('telegram.shutdown_message', True)
+    return get_config().get("telegram.shutdown_message", True)
 
 
 def get_backfill_config() -> Dict[str, Any]:
-    return get_config().get('backfill', {})
+    return get_config().get("backfill", {})
 
 
 def get_database_cleanup_config() -> Dict[str, Any]:
-    return get_config().get('database.cleanup', {})
+    return get_config().get("database.cleanup", {})
 
 
 def get_logging_config() -> Dict[str, Any]:
-    return get_config().get('logging', {})
+    return get_config().get("logging", {})
 
 
 def get_daily_summary_config() -> Dict[str, Any]:
     """Get daily summary configuration with safe defaults."""
     return {
-        'enabled': get_config().get('alerts.daily_summary.enabled', False),
-        'send_time_brt': get_config().get('alerts.daily_summary.send_time_brt', '21:00'),
-        'send_window_minutes': get_config().get('alerts.daily_summary.send_window_minutes', 5)
+        "enabled": get_config().get("alerts.daily_summary.enabled", False),
+        "send_time_brt": get_config().get(
+            "alerts.daily_summary.send_time_brt", "21:00"
+        ),
+        "send_window_minutes": get_config().get(
+            "alerts.daily_summary.send_window_minutes", 5
+        ),
     }
 
 
 def get_divergence_config() -> Dict[str, Any]:
     """Get divergence detection configuration with safe defaults."""
-    div_config = dict(get_config().get('indicators.divergence', {}) or {})
+    div_config = dict(get_config().get("indicators.divergence", {}) or {})
 
     if not isinstance(div_config, dict):
         div_config = {}
 
-    div_config.setdefault('enabled', True)
-    div_config.setdefault('timeframes', ['4h', '1d', '1w'])
-    div_config.setdefault('lookback', 20)
-    div_config.setdefault('debug_divergence', False)
+    div_config.setdefault("enabled", True)
+    div_config.setdefault("timeframes", ["4h", "1d", "1w"])
+    div_config.setdefault("lookback", 20)
+    div_config.setdefault("debug_divergence", False)
 
     return div_config
 
@@ -254,4 +283,6 @@ if not CHANNEL_CHAT_ID:
 # Validate Fear & Greed API key
 COINMARKETCAP_API_KEY = os.getenv("COINMARKETCAP_API_KEY", "").strip()
 if not COINMARKETCAP_API_KEY:
-    _config_logger.warning("COINMARKETCAP_API_KEY not set - Fear & Greed Index will show 'Indisponível'")
+    _config_logger.warning(
+        "COINMARKETCAP_API_KEY not set - Fear & Greed Index will show 'Indisponível'"
+    )
