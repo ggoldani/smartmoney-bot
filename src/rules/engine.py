@@ -63,9 +63,9 @@ class AlertEngine:
         self.alerted_candles: Dict[str, bool] = {}
 
         # Track last condition per symbol/interval to prevent spam
-        # key: "BTCUSDT_1h_RSI", value: "OVERSOLD" | "OVERBOUGHT" | None
-        # key: "BTCUSDT_1d_BREAKOUT", value: "BULL" | "BEAR" | None
-        self.last_condition: Dict[str, Optional[str]] = {}
+        # key: ("BTCUSDT", "1h", "RSI"), value: "OVERSOLD" | "OVERBOUGHT" | None
+        # key: ("BTCUSDT", "1d", "BREAKOUT"), value: "BULL" | "BEAR" | None
+        self.last_condition: Dict[tuple, Optional[str]] = {}
 
         # Consolidation: collect alerts in 6s window, send batched
         self.pending_alerts: List[Dict] = []
@@ -119,7 +119,7 @@ class AlertEngine:
                 oversold = self.rsi_config.get('oversold', 30)
                 result = analyze_rsi(symbol, interval, overbought, oversold, period)
                 if result and result.get('condition') != 'NORMAL':
-                    condition_key = f"{symbol}_{interval}_RSI"
+                    condition_key = (symbol, interval, "RSI")
                     alert_key = f"{symbol}_{interval}_{open_time}_{result['condition']}"
 
                     self.last_condition[condition_key] = result['condition']
@@ -135,7 +135,7 @@ class AlertEngine:
                 margin_pct = self.breakout_config.get('margin_percent', 0.1)
                 result = check_breakout(symbol, interval, current_price, open_time, margin_pct)
                 if result:
-                    condition_key = f"{symbol}_{interval}_BREAKOUT"
+                    condition_key = (symbol, interval, "BREAKOUT")
                     alert_key = f"{symbol}_{interval}_{open_time}_{result['type']}"
 
                     self.last_condition[condition_key] = result['type']
@@ -246,7 +246,7 @@ class AlertEngine:
 
         # Reset last_condition for BREAKOUT (allows new alerts on new candle)
         # RSI keeps last_condition (uses recovery zone instead)
-        breakout_key = f"{symbol}_{interval}_BREAKOUT"
+        breakout_key = (symbol, interval, "BREAKOUT")
         if breakout_key in self.last_condition:
             self.last_condition[breakout_key] = None
             logger.debug(f"Reset breakout condition for new candle: {symbol} {interval}")
@@ -398,7 +398,7 @@ class AlertEngine:
             logger.warning(f"RSI result missing required keys. Expected {required_keys}, got {set(result.keys())}")
             return
 
-        condition_tracker_key = f"{symbol}_{interval}_RSI"
+        condition_tracker_key = (symbol, interval, "RSI")
         current_condition = result["condition"]
         current_rsi = result["rsi"]
         last_condition = self.last_condition.get(condition_tracker_key)
@@ -483,7 +483,7 @@ class AlertEngine:
             logger.warning(f"BEAR breakout missing prev_low. Got {set(result.keys())}")
             return
 
-        condition_tracker_key = f"{symbol}_{interval}_BREAKOUT"
+        condition_tracker_key = (symbol, interval, "BREAKOUT")
         last_breakout = self.last_condition.get(condition_tracker_key)
 
         current_breakout_type = result['type']
@@ -627,17 +627,15 @@ class AlertEngine:
             all_timeframes.update(sym['timeframes'])
 
         keys_to_remove = []
-        for key in list(self.last_condition.keys()):
-            # key format: "SYMBOL_TF_RSI" or "SYMBOL_TF_BREAKOUT"
-            parts = key.rsplit('_', 1)  # Split from right to get symbol_tf and type
-            if len(parts) == 2:
-                symbol_tf, condition_type = parts
-                symbol_parts = symbol_tf.rsplit('_', 1)  # Extract symbol and tf
-                if len(symbol_parts) == 2:
-                    symbol, tf = symbol_parts
-                    # If symbol not in config, mark for removal
-                    if symbol not in current_symbols or tf not in all_timeframes:
-                        keys_to_remove.append(key)
+        for key in self.last_condition:
+            if isinstance(key, tuple) and len(key) >= 2:
+                symbol, tf = key[0], key[1]
+                # If symbol not in config, mark for removal
+                if symbol not in current_symbols or tf not in all_timeframes:
+                    keys_to_remove.append(key)
+            elif isinstance(key, str):
+                # Clean up legacy string keys if any exist
+                keys_to_remove.append(key)
 
         for key in keys_to_remove:
             del self.last_condition[key]
