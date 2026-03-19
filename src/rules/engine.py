@@ -37,7 +37,7 @@ from src.notif.templates import (
     template_mega_alert
 )
 from src.notif.throttle import get_throttler
-from src.telegram_bot import send_message, send_message_async
+from src.telegram_bot import send_message_async
 from src.storage.db import SessionLocal
 from src.storage.models import Candle
 
