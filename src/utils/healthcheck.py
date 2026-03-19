@@ -5,7 +5,7 @@ Returns bot status, uptime, and last alert timestamp.
 """
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Optional
 from aiohttp import web
 from loguru import logger
 
