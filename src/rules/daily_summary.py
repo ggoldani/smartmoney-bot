@@ -19,8 +19,7 @@ from src.telegram_bot import send_message_async
 async def run_daily_summary_loop(
     rsi_config: dict,
     throttler,
-    running_flag_fn,
-    last_candle_fn=None
+    running_flag_fn
 ) -> None:
     """
     Daily summary loop: sends Fear & Greed Index + RSI 1D/1W/1M at configured BRT time.
@@ -30,7 +29,6 @@ async def run_daily_summary_loop(
         rsi_config: RSI configuration dict (period, overbought, oversold)
         throttler: AlertThrottler instance for recording alerts
         running_flag_fn: Callable that returns True while engine is running
-        last_candle_fn: Callable that returns the engine's last_candle dict
     """
     config = get_daily_summary_config()
 
@@ -93,7 +91,7 @@ async def run_daily_summary_loop(
             )
 
             if window_start <= now_brt <= window_end:
-                await _send_summary(rsi_config, throttler, last_candle_fn)
+                await _send_summary(rsi_config, throttler)
             else:
                 logger.debug(f"Outside send window ({send_window_minutes}min tolerance)")
 
@@ -105,7 +103,7 @@ async def run_daily_summary_loop(
             await asyncio.sleep(60)
 
 
-async def _send_summary(rsi_config: dict, throttler, last_candle_fn=None) -> None:
+async def _send_summary(rsi_config: dict, throttler) -> None:
     """Fetch data and send the daily summary message."""
     fgi_value, fgi_label = await fetch_fear_greed_index()
     fgi_emoji, fgi_sentiment = get_fear_greed_sentiment(fgi_value)
@@ -118,8 +116,6 @@ async def _send_summary(rsi_config: dict, throttler, last_candle_fn=None) -> Non
     period = rsi_config.get('period', 14)
     overbought = rsi_config.get('overbought', 70)
     oversold = rsi_config.get('oversold', 30)
-
-    last_candle_dict = last_candle_fn() if last_candle_fn else {}
 
     symbols_data = []
     for sym_config in symbols_cfg:
@@ -137,11 +133,6 @@ async def _send_summary(rsi_config: dict, throttler, last_candle_fn=None) -> Non
         closed_candle = get_previous_closed_candle(symbol, "1d")
         price_open = closed_candle["open"] if closed_candle else 0
         price_close = closed_candle["close"] if closed_candle else 0
-
-        # Override price_close with live price if available
-        candle_key = f"{symbol}_1d"
-        if candle_key in last_candle_dict:
-            price_close = last_candle_dict[candle_key].get('close', price_close)
 
         symbols_data.append({
             "symbol": symbol,
