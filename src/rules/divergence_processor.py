@@ -322,9 +322,10 @@ class DivergenceProcessor:
                         f"(price={current_price}, rsi={rsi:.1f})"
                     )
             else:
+                # Mark alerted IMMEDIATELY before await to prevent race condition
+                self.last_divergence_alert[cache_key] = {"price": current_price, "rsi": rsi}
                 await self._send_alert(div_type, interval, symbol, current_price, rsi)
                 logger.info(f"{div_type} divergence detected {symbol} {interval}")
-                self.last_divergence_alert[cache_key] = {"price": current_price, "rsi": rsi}
 
         # Add new pivot to state
         state[state_key].append({
