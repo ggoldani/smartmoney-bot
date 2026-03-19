@@ -29,8 +29,14 @@ async def _send_message_async(text: str, chat_id: str) -> None:
 async def _send_photo_async(path: str, caption: Optional[str], chat_id: str) -> None:
     """Send photo to specific chat."""
     bot = _get_bot()
-    with open(path, "rb") as f:
-        await bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+
+    def read_photo_bytes() -> bytes:
+        with open(path, "rb") as f:
+            return f.read()
+
+    # Offload blocking I/O to a thread to keep the event loop responsive
+    photo_bytes = await asyncio.to_thread(read_photo_bytes)
+    await bot.send_photo(chat_id=chat_id, photo=photo_bytes, caption=caption)
 
 def _log_task_exception(task: asyncio.Task) -> None:
     """Log exceptions from fire-and-forget tasks."""
