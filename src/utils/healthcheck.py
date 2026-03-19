@@ -13,7 +13,7 @@ from loguru import logger
 class HealthcheckServer:
     """Simple HTTP server for healthcheck endpoint."""
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8080):
         self.host = host
         self.port = port
         self.app = web.Application()
