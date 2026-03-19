@@ -2,10 +2,11 @@
 Binance REST API for historical data backfill.
 Implements retry logic with exponential backoff for resilience.
 """
+
 import asyncio
 import time
-from typing import List, Dict, Optional
-from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
 import requests
 from loguru import logger
 
@@ -31,15 +32,22 @@ class BinanceRESTClient:
         for attempt in range(self.max_retries):
             try:
                 return func(*args, **kwargs)
-            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
+            except (
+                requests.exceptions.RequestException,
+                requests.exceptions.Timeout,
+            ) as e:
                 if attempt == self.max_retries - 1:
                     # Final attempt failed
-                    logger.error(f"Binance REST API failed after {self.max_retries} attempts: {e}")
+                    logger.error(
+                        f"Binance REST API failed after {self.max_retries} attempts: {e}"
+                    )
                     raise
 
                 # Exponential backoff: 1s, 2s, 4s
-                backoff = 2 ** attempt
-                logger.warning(f"Binance REST API attempt {attempt + 1} failed, retrying in {backoff}s: {e}")
+                backoff = 2**attempt
+                logger.warning(
+                    f"Binance REST API attempt {attempt + 1} failed, retrying in {backoff}s: {e}"
+                )
                 time.sleep(backoff)
 
     def get_klines(
@@ -48,7 +56,7 @@ class BinanceRESTClient:
         interval: str,
         limit: int = 500,
         start_time: Optional[int] = None,
-        end_time: Optional[int] = None
+        end_time: Optional[int] = None,
     ) -> List[List]:
         """
         Fetch historical klines (candlestick data).
@@ -67,12 +75,13 @@ class BinanceRESTClient:
                  quote_volume, num_trades, taker_buy_base, taker_buy_quote, ignore]
             ]
         """
+
         def _fetch():
             url = f"{BINANCE_API_BASE}/api/v3/klines"
             params = {
                 "symbol": symbol,
                 "interval": interval,
-                "limit": min(limit, 1000)  # Binance max is 1000
+                "limit": min(limit, 1000),  # Binance max is 1000
             }
 
             if start_time:
@@ -88,6 +97,7 @@ class BinanceRESTClient:
 
     def get_server_time(self) -> int:
         """Get Binance server time in ms (for sync check)."""
+
         def _fetch():
             url = f"{BINANCE_API_BASE}/api/v3/time"
             response = self.session.get(url, timeout=self.timeout)
@@ -115,14 +125,12 @@ def normalize_binance_kline(symbol: str, interval: str, kline: List) -> Dict:
         "low": float(kline[3]),
         "close": float(kline[4]),
         "volume": float(kline[5]),
-        "is_closed": True  # Historical data is always closed
+        "is_closed": True,  # Historical data is always closed
     }
 
 
 async def backfill_historical_data(
-    symbol: str,
-    timeframes: List[str],
-    limit: int = 200
+    symbol: str, timeframes: List[str], limit: int = 200
 ) -> Dict[str, int]:
     """
     Backfill historical candles for given symbol and timeframes.
@@ -148,10 +156,7 @@ async def backfill_historical_data(
             # Fetch historical klines
             logger.info(f"Fetching {limit} candles for {symbol} {interval}...")
             klines = await asyncio.to_thread(
-                client.get_klines,
-                symbol=symbol,
-                interval=interval,
-                limit=limit
+                client.get_klines, symbol=symbol, interval=interval, limit=limit
             )
 
             # Normalize and save
@@ -162,14 +167,18 @@ async def backfill_historical_data(
                     saved_count += 1
 
             results[interval] = saved_count
-            logger.info(f"Backfill {symbol} {interval}: {saved_count}/{len(klines)} candles saved")
+            logger.info(
+                f"Backfill {symbol} {interval}: {saved_count}/{len(klines)} candles saved"
+            )
 
         except Exception as e:
             logger.error(f"Backfill failed for {symbol} {interval}: {e}")
             results[interval] = 0
 
     total_saved = sum(results.values())
-    logger.info(f"Backfill completed: {total_saved} total candles saved across {len(timeframes)} timeframes")
+    logger.info(
+        f"Backfill completed: {total_saved} total candles saved across {len(timeframes)} timeframes"
+    )
 
     return results
 
