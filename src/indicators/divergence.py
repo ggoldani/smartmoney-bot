@@ -182,8 +182,17 @@ def calculate_rsi_for_candles(closes: List[float], period: int = 14) -> List[Opt
     changes = [closes[i] - closes[i - 1] for i in range(1, n)]
 
     # Initial average gain/loss (SMA for first period)
-    avg_gain = sum(max(c, 0) for c in changes[:period]) / period
-    avg_loss = sum(abs(min(c, 0)) for c in changes[:period]) / period
+    sum_gain = 0.0
+    sum_loss = 0.0
+    for i in range(period):
+        c = changes[i]
+        if c > 0:
+            sum_gain += c
+        else:
+            sum_loss -= c
+
+    avg_gain = sum_gain / period
+    avg_loss = sum_loss / period
 
     # RSI for the first complete period
     if avg_loss == 0:
@@ -195,8 +204,12 @@ def calculate_rsi_for_candles(closes: List[float], period: int = 14) -> List[Opt
     # Wilder's smoothing for subsequent values
     for i in range(period, len(changes)):
         change = changes[i]
-        gain = max(change, 0)
-        loss = abs(min(change, 0))
+        if change > 0:
+            gain = change
+            loss = 0.0
+        else:
+            gain = 0.0
+            loss = -change
 
         avg_gain = (avg_gain * (period - 1) + gain) / period
         avg_loss = (avg_loss * (period - 1) + loss) / period
