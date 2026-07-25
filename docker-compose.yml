@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
+    # Rodar como uid:gid do host user (alinha perms de volumes data/ logs/)
+    user: "1000:1000"
 
     environment:
       - PYTHONPATH=/app
