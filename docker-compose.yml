@@ -5,8 +5,11 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    # Rodar como uid:gid do host user (alinha perms de volumes data/ logs/)
-    user: "1000:1000"
+    # Rootless Docker: uid 0 no container mapeia para host uid 100000 (subuid range),
+    # que tem acesso aos volumes data/ logs/ owned by host uid 1000.
+    # uid 1000 no container mapeia para host uid 101000 (nao corresponde ao dono).
+    # Sem isso: PermissionError no bot.log + readonly database no SQLite.
+    user: "0:0"
 
     environment:
       - PYTHONPATH=/app
