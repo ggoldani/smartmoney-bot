@@ -15,9 +15,9 @@ telegram:
 # Symbols to monitor (free tier: BTCUSDT only)
 symbols:
   - name: "BTCUSDT"
-    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    timeframes: ["4h", "1d", "1w", "1M"]
   - name : "PAXGUSDT"
-    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    timeframes: ["4h", "1d", "1w", "1M"]
 
 
 # Historical data backfill on startup
@@ -43,7 +43,7 @@ indicators:
       lower: 40   # Lower bound: RSI must cross above this to reset oversold state
       upper: 60   # Upper bound: RSI must cross below this to reset overbought state
     # Timeframes to calculate RSI for (subset of symbol timeframes)
-    timeframes: ["1h", "4h", "1d", "1w", "1M"]
+    timeframes: ["4h", "1d", "1w", "1M"]
     # Alert when RSI touches threshold (during candle, not only on close)
     # This catches extreme moments even if candle recovers before closing
     alert_on_touch: true
