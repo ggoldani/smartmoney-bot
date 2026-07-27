@@ -57,6 +57,18 @@ indicators:
     # Alert immediately when price touches level (not on close)
     alert_on_touch: true
 
+  bollinger:
+    enabled: true
+    timeframe: "1d"
+    period: 21
+    std_mult: 2.0
+    # Buffer applied to bands to filter marginal breaches (0.5% = price must exceed band by 0.5%)
+    buffer_pct: 0.5
+    # Trend filter: RSI on weekly + monthly determines direction
+    trend:
+      rsi_period: 14
+      threshold: 50   # < threshold = downtrend (seek SHORT), > threshold = uptrend (seek LONG)
+
   divergence:
     enabled: true
     # Timeframes to detect RSI divergence (bullish/bearish pivots)
