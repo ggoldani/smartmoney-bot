@@ -8,7 +8,7 @@ See `/smartmoney-bot/CLAUDE.md` for setup/deployment.
 
 **datafeeds/:** `binance_ws.py` (multi-symbol streams, auto-reconnect) | `binance_rest.py` (200 candles/TF backfill) | `fear_greed.py` (CoinMarketCap API v3)
 
-**indicators/:** `rsi.py` (Wilder's p14) | `breakouts.py` (±0.15%) | `divergence.py` (3-pivot, RSI thresholds 40/60)
+**indicators/:** `rsi.py` (Wilder's p14) | `breakouts.py` (±0.15%) | `divergence.py` (3-pivot, RSI thresholds 40/60) | `bollinger.py` (BB 21/2σ contratrend)
 
 **rules/:** `engine.py` (5s loop, init/process divergence, daily summary task) | `rule_defs.py` (recovery zones 40-60)
 

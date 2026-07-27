@@ -1,7 +1,7 @@
 # AGENTS.md — SmartMoney Bot
 
 Bot Telegram de alertas crypto (multi-symbol: BTCUSDT, PAXGUSDT, etc).
-Alertas: RSI | Breakouts | Divergência RSI | Resumo Diário (Fear & Greed).
+Alertas: RSI | Breakouts | Divergência RSI | Resumo Diário (Fear & Greed) | BB Contratrend.
 
 **Stack:** Python 3.13+ (async) | SQLite + SQLAlchemy | Binance WS | python-telegram-bot 21.x | APScheduler | loguru | pytest (268 tests, 95%+ coverage)
 
