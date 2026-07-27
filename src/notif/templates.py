@@ -370,6 +370,18 @@ def template_mega_alert(alerts: List[Dict]) -> str:
             div_label = 'Bullish' if alert['condition'] == 'BULLISH' else 'Bearish'
             alert_blocks.append(f"Divergência {div_label} ({tf}): \n{symbol} {price} | RSI {rsi}")
 
+        elif alert['type'] == 'BB':
+            symbol = format_symbol_display(alert['symbol'])
+            tf = format_timeframe_display(alert['interval'])
+            price = format_price_br(alert['price'])
+            rsi_1w = format_rsi_value(alert.get('rsi_1w', 0))
+            rsi_1M = format_rsi_value(alert.get('rsi_1M', 0))
+
+            direction = 'SHORT' if alert['condition'] == 'SHORT' else 'LONG'
+            alert_blocks.append(
+                f"BB Contratrend {direction} ({tf}): \n{symbol} {price} | RSI 1S {rsi_1w} 1M {rsi_1M}"
+            )
+
     alerts_text = "\n\n".join(alert_blocks)
 
     return f"""Múltiplas Condições Críticas

@@ -224,3 +224,32 @@ class TestBBTemplates:
         assert ALERT_DISCLAIMER in template_bb_short(data)
         data_long = {**data, "bb_lower": 101.0}
         assert ALERT_DISCLAIMER in template_bb_long(data_long)
+
+
+class TestBBMegaAlert:
+    """Tests for BB block in mega-alert consolidation."""
+
+    def test_mega_alert_includes_bb_short(self):
+        """Mega-alert should render BB SHORT block."""
+        from src.notif.templates import template_mega_alert
+        alerts = [{
+            "type": "BB", "condition": "SHORT",
+            "symbol": "BTCUSDT", "interval": "1d",
+            "price": 67500.0, "bb_upper": 67000.0,
+            "effective_band": 67335.0,
+            "rsi_1w": 42.0, "rsi_1M": 38.0,
+        }]
+        result = template_mega_alert(alerts)
+        assert "BB Contratrend SHORT" in result
+
+    def test_mega_alert_includes_bb_long(self):
+        from src.notif.templates import template_mega_alert
+        alerts = [{
+            "type": "BB", "condition": "LONG",
+            "symbol": "BTCUSDT", "interval": "1d",
+            "price": 94500.0, "bb_lower": 95000.0,
+            "effective_band": 94525.0,
+            "rsi_1w": 58.0, "rsi_1M": 62.0,
+        }]
+        result = template_mega_alert(alerts)
+        assert "BB Contratrend LONG" in result
