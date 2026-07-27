@@ -21,10 +21,12 @@ from src.config import (
     is_indicator_enabled,
     get_rsi_config,
     get_breakout_config,
-    get_alert_config
+    get_alert_config,
+    get_bollinger_config
 )
 from src.indicators.rsi import analyze_rsi, analyze_rsi_all_timeframes
 from src.indicators.breakouts import check_breakout
+from src.indicators.bollinger import check_bb_breach, is_price_inside_bands
 from src.notif.templates import (
     template_rsi_overbought,
     template_rsi_oversold,
@@ -33,6 +35,8 @@ from src.notif.templates import (
     template_rsi_multi_tf,
     template_breakout_bull,
     template_breakout_bear,
+    template_bb_short,
+    template_bb_long,
     template_mega_alert
 )
 from src.notif.throttle import get_throttler
@@ -80,6 +84,7 @@ class AlertEngine:
         self.rsi_config = get_rsi_config()
         self.breakout_config = get_breakout_config()
         self.alert_config = get_alert_config()
+        self.bb_config = get_bollinger_config()
         self.throttler = get_throttler()
 
         # Divergence processor (encapsulates state + detection logic)
@@ -142,6 +147,31 @@ class AlertEngine:
                     self.alerted_candles_with_timestamp[alert_key] = time.time()
 
                     logger.debug(f"Initialized Breakout condition: {symbol} {interval} = {result['type']}")
+
+        # Initialize Bollinger contratrend condition (prevents retroactive alerts on restart)
+        if is_indicator_enabled('bollinger'):
+            bb_tf = self.bb_config.get('timeframe', '1d')
+            if interval == bb_tf:
+                period = self.bb_config.get('period', 21)
+                std_mult = self.bb_config.get('std_mult', 2.0)
+                buffer_pct = self.bb_config.get('buffer_pct', 0.5)
+                result = check_bb_breach(symbol, interval, current_price, period, std_mult, buffer_pct)
+                if result:
+                    # Determine trend to know which breach direction is "active"
+                    trend = self._determine_trend(symbol)
+                    condition_key_tuple = (symbol, interval, "BB")
+                    if trend == "BEAR" and result["type"] == "UPPER":
+                        self.last_condition[condition_key_tuple] = "SHORT"
+                        alert_key = f"{symbol}_{interval}_{open_time}_BB_SHORT"
+                        self.alerted_candles[alert_key] = True
+                        self.alerted_candles_with_timestamp[alert_key] = time.time()
+                        logger.debug(f"Initialized BB condition: {symbol} {interval} = SHORT (already breaching)")
+                    elif trend == "BULL" and result["type"] == "LOWER":
+                        self.last_condition[condition_key_tuple] = "LONG"
+                        alert_key = f"{symbol}_{interval}_{open_time}_BB_LONG"
+                        self.alerted_candles[alert_key] = True
+                        self.alerted_candles_with_timestamp[alert_key] = time.time()
+                        logger.debug(f"Initialized BB condition: {symbol} {interval} = LONG (already breaching)")
 
     async def _process_divergences(self, symbol: str, interval: str, open_time: int):
         """Delegate divergence processing to DivergenceProcessor."""
@@ -269,6 +299,41 @@ class AlertEngine:
         """Return template function for breakout type"""
         return template_breakout_bull if breakout_type == "BULL" else template_breakout_bear
 
+    def _get_bb_template(self, bb_type: str):
+        """Return template function for BB contratrend type."""
+        return template_bb_short if bb_type == "SHORT" else template_bb_long
+
+    def _determine_trend(self, symbol: str) -> Optional[str]:
+        """
+        Determine trend from RSI on weekly + monthly.
+        Uses existing analyze_rsi() with _use_config=False to honor the passed period.
+
+        Returns:
+            "BULL" if RSI(1w) > 50 AND RSI(1M) > 50
+            "BEAR" if RSI(1w) < 50 AND RSI(1M) < 50
+            None if neutral or insufficient data
+        """
+        trend_cfg = self.bb_config.get('trend', {})
+        rsi_period = trend_cfg.get('rsi_period', 14)
+        threshold = trend_cfg.get('threshold', 50)
+
+        rsi_1w = analyze_rsi(symbol, "1w", period=rsi_period, _use_config=False)
+        rsi_1M = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
+
+        if not rsi_1w or not rsi_1M:
+            return None
+
+        val_1w = rsi_1w.get("rsi")
+        val_1M = rsi_1M.get("rsi")
+        if val_1w is None or val_1M is None:
+            return None
+
+        if val_1w > threshold and val_1M > threshold:
+            return "BULL"
+        if val_1w < threshold and val_1M < threshold:
+            return "BEAR"
+        return None
+
     def _get_rsi_severity(self, condition: str) -> int:
         """
         Get severity level of RSI condition.
@@ -368,6 +433,14 @@ class AlertEngine:
             alert_dict['prev_high'] = result.get('prev_high')
             alert_dict['prev_low'] = result.get('prev_low')
             alert_dict['change_pct'] = result.get('change_pct')
+        elif alert_type == 'BB':
+            alert_dict['price'] = result.get('price')
+            alert_dict['bb_upper'] = result.get('bb_upper')
+            alert_dict['bb_lower'] = result.get('bb_lower')
+            alert_dict['bb_middle'] = result.get('bb_middle')
+            alert_dict['effective_band'] = result.get('effective_band')
+            alert_dict['rsi_1w'] = result.get('rsi_1w')
+            alert_dict['rsi_1M'] = result.get('rsi_1M')
 
         self.pending_alerts.append(alert_dict)
 
@@ -515,6 +588,81 @@ class AlertEngine:
             template_func=self._get_breakout_template(current_breakout_type)
         )
 
+    def _collect_bb_alert(self, symbol: str, interval: str, current_price: float, open_time: int):
+        """
+        Check BB contratrend condition and collect alert if valid.
+        Anti-spam: state resets only when price returns inside bands (not on new candle).
+        """
+        if not is_indicator_enabled('bollinger'):
+            return
+
+        bb_tf = self.bb_config.get('timeframe', '1d')
+        if interval != bb_tf:
+            return
+
+        period = self.bb_config.get('period', 21)
+        std_mult = self.bb_config.get('std_mult', 2.0)
+        buffer_pct = self.bb_config.get('buffer_pct', 0.5)
+
+        tracker_key = (symbol, interval, "BB")
+        last_bb = self.last_condition.get(tracker_key)
+
+        # ANTI-SPAM RESET: if currently in breach state, check if price returned inside bands
+        if last_bb is not None:
+            if is_price_inside_bands(symbol, interval, current_price, period, std_mult):
+                logger.debug(f"BB reset: {symbol} {interval} price returned inside bands")
+                self.last_condition[tracker_key] = None
+            return  # Either still breaching (skip) or just reset (wait for new breach)
+
+        # Not in breach state — check for new breach
+        result = check_bb_breach(symbol, interval, current_price, period, std_mult, buffer_pct)
+        if not result:
+            return
+
+        # Determine trend
+        trend = self._determine_trend(symbol)
+        if trend is None:
+            return  # Neutral trend, no alert
+
+        # Map breach direction + trend → alert condition
+        # BEAR trend + UPPER breach → SHORT (mean reversion short)
+        # BULL trend + LOWER breach → LONG (mean reversion long)
+        if trend == "BEAR" and result["type"] == "UPPER":
+            condition = "SHORT"
+        elif trend == "BULL" and result["type"] == "LOWER":
+            condition = "LONG"
+        else:
+            return  # Wrong direction (breach with trend, not against)
+
+        alert_key = f"{symbol}_{interval}_{open_time}_BB_{condition}"
+        if alert_key in self.alerted_candles:
+            return
+
+        # Throttle
+        condition_key = f"BB_{condition}_{interval}"
+        if not self._check_throttle_and_mark(condition_key, alert_key, tracker_key, condition):
+            return
+
+        # Enrich result with trend context for template
+        trend_cfg = self.bb_config.get('trend', {})
+        rsi_period = trend_cfg.get('rsi_period', 14)
+        rsi_1w_data = analyze_rsi(symbol, "1w", period=rsi_period, _use_config=False)
+        rsi_1M_data = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
+        result["rsi_1w"] = rsi_1w_data.get("rsi") if rsi_1w_data else None
+        result["rsi_1M"] = rsi_1M_data.get("rsi") if rsi_1M_data else None
+
+        self._collect_single_alert(
+            alert_type='BB',
+            condition=condition,
+            symbol=symbol,
+            interval=interval,
+            open_time=open_time,
+            result=result,
+            tracker_key=tracker_key,
+            condition_key=condition_key,
+            template_func=self._get_bb_template(condition)
+        )
+
     async def check_multi_tf_consolidation(self, symbol: str):
         """
         Check if multiple timeframes have critical RSI simultaneously.
@@ -573,6 +721,9 @@ class AlertEngine:
 
         # Collect breakout alerts
         self._collect_breakout_alert(symbol, interval, current_price, open_time)
+
+        # Collect Bollinger contratrend alerts
+        self._collect_bb_alert(symbol, interval, current_price, open_time)
 
         # NEW: Collect Divergence alerts (Risco 4: inside loop for consistency)
         await self._process_divergences(symbol, interval, open_time)
