@@ -1,4 +1,4 @@
-"""Tests for Bollinger Bands indicator and BB contratrend alert integration."""
+"""Tests for Bollinger Bands indicator and BB trend-follow alert integration."""
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -176,10 +176,10 @@ class TestIsPriceInsideBands:
 
 
 class TestBBTemplates:
-    """Tests for BB contratrend alert templates."""
+    """Tests for BB trend-follow alert templates."""
 
     def test_template_bb_short(self):
-        """template_bb_short should render SHORT contratrend alert."""
+        """template_bb_short should render SHORT trend-follow alert."""
         from src.notif.templates import template_bb_short
         data = {
             "symbol": "BTCUSDT",
@@ -196,7 +196,7 @@ class TestBBTemplates:
         assert "RSI" in result  # shows trend context
 
     def test_template_bb_long(self):
-        """template_bb_long should render LONG contratrend alert."""
+        """template_bb_long should render LONG trend-follow alert."""
         from src.notif.templates import template_bb_long
         data = {
             "symbol": "BTCUSDT",
@@ -238,7 +238,7 @@ class TestBBMegaAlert:
             "rsi_1M": 38.0,
         }]
         result = template_mega_alert(alerts)
-        assert "BB Contratrend SHORT" in result
+        assert "BB Trend SHORT" in result
 
     def test_mega_alert_includes_bb_long(self):
         from src.notif.templates import template_mega_alert
@@ -250,7 +250,7 @@ class TestBBMegaAlert:
             "rsi_1M": 62.0,
         }]
         result = template_mega_alert(alerts)
-        assert "BB Contratrend LONG" in result
+        assert "BB Trend LONG" in result
 
     def test_mega_alert_bb_uses_real_newline_not_literal(self):
         """Regression test: BB block must use real \\n, not literal backslash-n."""
@@ -262,7 +262,7 @@ class TestBBMegaAlert:
         }]
         result = template_mega_alert(alerts)
         # The BB block must contain a real newline after the label
-        assert "BB Contratrend SHORT (1 dia): \n" in result  # real newline
+        assert "BB Trend SHORT (1 dia): \n" in result  # real newline
         # Must NOT contain literal backslash-n
-        bb_line = [l for l in result.split('\n') if 'BB Contratrend' in l][0]
+        bb_line = [l for l in result.split('\n') if 'BB Trend' in l][0]
         assert '\\n' not in repr(bb_line)

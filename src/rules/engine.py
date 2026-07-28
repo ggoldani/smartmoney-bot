@@ -149,7 +149,7 @@ class AlertEngine:
 
                     logger.debug(f"Initialized Breakout condition: {symbol} {interval} = {result['type']}")
 
-        # Initialize Bollinger contratrend condition (prevents retroactive alerts on restart)
+        # Initialize Bollinger trend-follow condition (prevents retroactive alerts on restart)
         if is_indicator_enabled('bollinger'):
             bb_tf = self.bb_config.get('timeframe', '1d')
             if interval == bb_tf:
@@ -303,7 +303,7 @@ class AlertEngine:
         return template_breakout_bull if breakout_type == "BULL" else template_breakout_bear
 
     def _get_bb_template(self, bb_type: str):
-        """Return template function for BB contratrend type."""
+        """Return template function for BB trend-follow type."""
         return template_bb_short if bb_type == "SHORT" else template_bb_long
 
     def _determine_trend(self, symbol: str) -> tuple[Optional[str], Optional[float]]:
@@ -595,7 +595,7 @@ class AlertEngine:
 
     def _collect_bb_alert(self, symbol: str, interval: str, current_price: float, open_time: int):
         """
-        Check BB contratrend condition and collect alert if valid.
+        Check BB trend-follow condition and collect alert if valid.
         Anti-spam: state resets only when price returns inside bands (not on new candle).
         """
         if not is_indicator_enabled('bollinger'):
@@ -728,7 +728,7 @@ class AlertEngine:
         # Collect breakout alerts
         self._collect_breakout_alert(symbol, interval, current_price, open_time)
 
-        # Collect Bollinger contratrend alerts
+        # Collect Bollinger trend-follow alerts
         self._collect_bb_alert(symbol, interval, current_price, open_time)
 
         # NEW: Collect Divergence alerts (Risco 4: inside loop for consistency)

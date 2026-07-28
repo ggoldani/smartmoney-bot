@@ -1,4 +1,4 @@
-"""Tests for BB contratrend alert integration in AlertEngine."""
+"""Tests for BB trend-follow alert integration in AlertEngine."""
 import pytest
 from unittest.mock import patch, MagicMock
 from src.rules.engine import AlertEngine

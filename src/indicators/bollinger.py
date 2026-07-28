@@ -1,5 +1,5 @@
 """
-Bollinger Bands indicator and contratrend breach detection.
+Bollinger Bands indicator and trend-follow breach detection.
 BB(period, std_mult) calculated on CLOSED candles only (avoids self-healing).
 """
 from typing import List, Dict, Optional

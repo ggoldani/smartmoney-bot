@@ -204,8 +204,8 @@ Mín anterior: {prev_low} | -{change_pct}
 
 def template_bb_short(data: Dict) -> str:
     """
-    Template for BB contratrend SHORT alert.
-    Triggered when downtrend (RSI 1w/1M < 50) and price breaches BB upper band.
+    Template for BB trend-follow SHORT alert.
+    Triggered when downtrend (RSI 1M < 50) and price breaches BB upper band.
 
     Args:
         data: {
@@ -222,7 +222,7 @@ def template_bb_short(data: Dict) -> str:
     rsi_1M = format_rsi_value(data["rsi_1M"])
     timestamp = format_datetime_br()
 
-    return f"""BB Contratrend SHORT ({timeframe})
+    return f"""BB Trend SHORT ({timeframe})
 
 {symbol} {price}
 Banda superior: {bb_upper} (efetiva: {effective})
@@ -234,8 +234,8 @@ Tendência: RSI 1M {rsi_1M} (baixa)
 
 def template_bb_long(data: Dict) -> str:
     """
-    Template for BB contratrend LONG alert.
-    Triggered when uptrend (RSI 1w/1M > 50) and price breaches BB lower band.
+    Template for BB trend-follow LONG alert.
+    Triggered when uptrend (RSI 1M > 50) and price breaches BB lower band.
 
     Args:
         data: {
@@ -252,7 +252,7 @@ def template_bb_long(data: Dict) -> str:
     rsi_1M = format_rsi_value(data["rsi_1M"])
     timestamp = format_datetime_br()
 
-    return f"""BB Contratrend LONG ({timeframe})
+    return f"""BB Trend LONG ({timeframe})
 
 {symbol} {price}
 Banda inferior: {bb_lower} (efetiva: {effective})
@@ -376,7 +376,7 @@ def template_mega_alert(alerts: List[Dict]) -> str:
 
             direction = 'SHORT' if alert['condition'] == 'SHORT' else 'LONG'
             alert_blocks.append(
-                f"BB Contratrend {direction} ({tf}): \n{symbol} {price} | RSI 1M {rsi_1M}"
+                f"BB Trend {direction} ({tf}): \n{symbol} {price} | RSI 1M {rsi_1M}"
             )
 
     alerts_text = "\n\n".join(alert_blocks)

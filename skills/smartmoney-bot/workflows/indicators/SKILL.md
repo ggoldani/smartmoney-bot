@@ -13,7 +13,7 @@ Implementar ou modificar indicadores técnicos no módulo `src/indicators/`.
 - `src/indicators/rsi.py` — RSI Wilder's período 14
 - `src/indicators/breakouts.py` — Breakouts ±0.15%
 - `src/indicators/divergence.py` — Divergência 3-pivot, RSI thresholds 40/60
-- `src/indicators/bollinger.py` — Bollinger Bands (21, 2σ) contratrend breach detection
+- `src/indicators/bollinger.py` — Bollinger Bands (21, 2σ) trend-follow breach detection
 - Integração: `src/rules/engine.py` (chamadas), `src/notif/templates.py` (templates), `configs/free.yaml` (thresholds)
 
 ## Triggers
