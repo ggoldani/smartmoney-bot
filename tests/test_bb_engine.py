@@ -22,35 +22,6 @@ def engine():
         yield AlertEngine()
 
 
-class TestDetermineTrend:
-    """Tests for _determine_trend()."""
-
-    @patch("src.rules.engine.analyze_rsi")
-    def test_bear_trend(self, mock_rsi, engine):
-        mock_rsi.side_effect = [{"rsi": 40.0}, {"rsi": 35.0}]  # 1w, 1M
-        assert engine._determine_trend("BTCUSDT") == "BEAR"
-
-    @patch("src.rules.engine.analyze_rsi")
-    def test_bull_trend(self, mock_rsi, engine):
-        mock_rsi.side_effect = [{"rsi": 60.0}, {"rsi": 65.0}]
-        assert engine._determine_trend("BTCUSDT") == "BULL"
-
-    @patch("src.rules.engine.analyze_rsi")
-    def test_neutral_mixed(self, mock_rsi, engine):
-        mock_rsi.side_effect = [{"rsi": 60.0}, {"rsi": 40.0}]  # mixed
-        assert engine._determine_trend("BTCUSDT") is None
-
-    @patch("src.rules.engine.analyze_rsi")
-    def test_neutral_exact_threshold(self, mock_rsi, engine):
-        mock_rsi.side_effect = [{"rsi": 50.0}, {"rsi": 50.0}]  # exactly 50
-        assert engine._determine_trend("BTCUSDT") is None
-
-    @patch("src.rules.engine.analyze_rsi")
-    def test_neutral_insufficient_data(self, mock_rsi, engine):
-        mock_rsi.side_effect = [None, {"rsi": 40.0}]
-        assert engine._determine_trend("BTCUSDT") is None
-
-
 class TestCollectBBAlert:
     """Tests for _collect_bb_alert() state machine."""
 
@@ -143,3 +114,59 @@ class TestCollectBBAlert:
         with patch("src.rules.engine.check_bb_breach") as mock_breach:
             engine._collect_bb_alert("BTCUSDT", "4h", 105.0, 1700000000)
             mock_breach.assert_not_called()
+
+
+class TestSymbolRouting:
+    """Tests for symbol routing via get_symbol_alerts()."""
+
+    @patch("src.rules.engine.get_symbol_alerts", return_value=["bb"])
+    @patch("src.rules.engine.is_indicator_enabled", return_value=True)
+    def test_rsi_skipped_for_bb_only_symbol(self, mock_enabled, mock_alerts, engine):
+        """BB-only symbol should skip RSI alert collection."""
+        with patch.object(engine, "_check_throttle_and_mark") as mock_throttle:
+            engine._collect_rsi_alert("ETHUSDT", "1d", 1700000000)
+            mock_throttle.assert_not_called()
+
+    @patch("src.rules.engine.get_symbol_alerts", return_value=["bb"])
+    @patch("src.rules.engine.is_indicator_enabled", return_value=True)
+    def test_breakout_skipped_for_bb_only_symbol(self, mock_enabled, mock_alerts, engine):
+        with patch.object(engine, "_check_throttle_and_mark") as mock_throttle:
+            engine._collect_breakout_alert("ETHUSDT", "1d", 100.0, 1700000000)
+            mock_throttle.assert_not_called()
+
+    @patch.object(AlertEngine, "_determine_trend", return_value="BEAR")
+    @patch("src.rules.engine.get_symbol_alerts", return_value=["rsi", "breakout", "divergence", "bb"])
+    @patch("src.rules.engine.is_indicator_enabled", return_value=True)
+    def test_bb_runs_for_full_symbol(self, mock_enabled, mock_alerts, mock_trend, engine):
+        """Full symbol (all alerts) should proceed to BB check."""
+        with patch("src.rules.engine.check_bb_breach", return_value=None) as mock_breach:
+            engine._collect_bb_alert("BTCUSDT", "1d", 100.0, 1700000000)
+            mock_breach.assert_called_once()
+
+
+class TestTrendFilterMensalOnly:
+    """Tests for _determine_trend() using monthly RSI only."""
+
+    @patch("src.rules.engine.analyze_rsi")
+    def test_bull_trend_mensal_only(self, mock_rsi, engine):
+        """RSI(1M) > 50 → BULL, no weekly check needed."""
+        mock_rsi.return_value = {"rsi": 60.0}
+        assert engine._determine_trend("BTCUSDT") == "BULL"
+        # Should call analyze_rsi only once (1M), not twice (1w + 1M)
+        assert mock_rsi.call_count == 1
+        mock_rsi.assert_called_with("BTCUSDT", "1M", period=14, _use_config=False)
+
+    @patch("src.rules.engine.analyze_rsi")
+    def test_bear_trend_mensal_only(self, mock_rsi, engine):
+        mock_rsi.return_value = {"rsi": 40.0}
+        assert engine._determine_trend("BTCUSDT") == "BEAR"
+
+    @patch("src.rules.engine.analyze_rsi")
+    def test_neutral_exact_threshold(self, mock_rsi, engine):
+        mock_rsi.return_value = {"rsi": 50.0}
+        assert engine._determine_trend("BTCUSDT") is None
+
+    @patch("src.rules.engine.analyze_rsi")
+    def test_neutral_insufficient_data(self, mock_rsi, engine):
+        mock_rsi.return_value = None
+        assert engine._determine_trend("BTCUSDT") is None

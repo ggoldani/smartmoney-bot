@@ -22,7 +22,8 @@ from src.config import (
     get_rsi_config,
     get_breakout_config,
     get_alert_config,
-    get_bollinger_config
+    get_bollinger_config,
+    get_symbol_alerts,
 )
 from src.indicators.rsi import analyze_rsi, analyze_rsi_all_timeframes
 from src.indicators.breakouts import check_breakout
@@ -175,6 +176,8 @@ class AlertEngine:
 
     async def _process_divergences(self, symbol: str, interval: str, open_time: int):
         """Delegate divergence processing to DivergenceProcessor."""
+        if 'divergence' not in get_symbol_alerts(symbol):
+            return
         await self.divergence_processor.process(symbol, interval, open_time)
 
     async def check_for_new_candles(self):
@@ -305,32 +308,30 @@ class AlertEngine:
 
     def _determine_trend(self, symbol: str) -> Optional[str]:
         """
-        Determine trend from RSI on weekly + monthly.
-        Uses existing analyze_rsi() with _use_config=False to honor the passed period.
+        Determine trend from RSI on monthly only.
+        Weekly dropped per strategy v2.
 
         Returns:
-            "BULL" if RSI(1w) > 50 AND RSI(1M) > 50
-            "BEAR" if RSI(1w) < 50 AND RSI(1M) < 50
+            "BULL" if RSI(1M) > threshold
+            "BEAR" if RSI(1M) < threshold
             None if neutral or insufficient data
         """
         trend_cfg = self.bb_config.get('trend', {})
         rsi_period = trend_cfg.get('rsi_period', 14)
         threshold = trend_cfg.get('threshold', 50)
 
-        rsi_1w = analyze_rsi(symbol, "1w", period=rsi_period, _use_config=False)
         rsi_1M = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
 
-        if not rsi_1w or not rsi_1M:
+        if not rsi_1M:
             return None
 
-        val_1w = rsi_1w.get("rsi")
         val_1M = rsi_1M.get("rsi")
-        if val_1w is None or val_1M is None:
+        if val_1M is None:
             return None
 
-        if val_1w > threshold and val_1M > threshold:
+        if val_1M > threshold:
             return "BULL"
-        if val_1w < threshold and val_1M < threshold:
+        if val_1M < threshold:
             return "BEAR"
         return None
 
@@ -452,6 +453,9 @@ class AlertEngine:
         if not is_indicator_enabled('rsi'):
             return
 
+        if 'rsi' not in get_symbol_alerts(symbol):
+            return
+
         rsi_timeframes = self.rsi_config.get('timeframes', [])
         if interval not in rsi_timeframes:
             return
@@ -527,6 +531,9 @@ class AlertEngine:
         if not is_indicator_enabled('breakout'):
             return
 
+        if 'breakout' not in get_symbol_alerts(symbol):
+            return
+
         breakout_timeframes = self.breakout_config.get('timeframes', [])
         if interval not in breakout_timeframes:
             return
@@ -594,6 +601,9 @@ class AlertEngine:
         Anti-spam: state resets only when price returns inside bands (not on new candle).
         """
         if not is_indicator_enabled('bollinger'):
+            return
+
+        if 'bb' not in get_symbol_alerts(symbol):
             return
 
         bb_tf = self.bb_config.get('timeframe', '1d')
@@ -669,6 +679,9 @@ class AlertEngine:
         If yes, send consolidated alert instead of individual alerts.
         """
         if not is_indicator_enabled('rsi'):
+            return
+
+        if 'rsi' not in get_symbol_alerts(symbol):
             return
 
         if not self.alert_config.get('consolidate_multi_tf', False):
