@@ -741,3 +741,71 @@ class TestDailySummaryMultiTemplate:
         assert "1D: 50,00 📈 ALTA" in message
         assert "1W: 49,99 📉 BAIXA" in message
         assert "1M: 50,01 📈 ALTA" in message
+
+
+# ==================== TESTS: SYMBOL ROUTING FILTER ====================
+
+class TestDailySummarySymbolFilter:
+    """Tests for symbol routing in daily summary (exclude BB-only symbols)."""
+
+    @pytest.mark.asyncio
+    @patch("src.rules.daily_summary.send_message_async", new_callable=AsyncMock, return_value=True)
+    @patch("src.rules.daily_summary.get_previous_closed_candle")
+    @patch("src.rules.daily_summary.analyze_rsi")
+    @patch("src.rules.daily_summary.get_fear_greed_sentiment", return_value=("😐", "Neutro"))
+    @patch("src.rules.daily_summary.fetch_fear_greed_index", new_callable=AsyncMock, return_value=(50, "Neutral"))
+    @patch("src.rules.daily_summary.get_symbols")
+    async def test_bb_only_symbols_excluded_from_summary(
+        self, mock_symbols, mock_fg, mock_sentiment, mock_rsi, mock_candle, mock_send
+    ):
+        """BB-only symbols should not appear in daily summary."""
+        mock_symbols.return_value = [
+            {"name": "BTCUSDT", "alerts": ["rsi", "breakout", "divergence", "bb"]},
+            {"name": "ETHUSDT", "alerts": ["bb"]},  # BB-only
+        ]
+        mock_rsi.return_value = {"rsi": 50.0}
+        mock_candle.return_value = {"open": 100.0, "close": 101.0}
+
+        # Mock get_symbol_alerts: return the alerts list from the symbol config.
+        # BTCUSDT has rsi → included; ETHUSDT has only bb → excluded.
+        from src.rules import daily_summary as ds
+        with patch.object(ds, "get_symbol_alerts", side_effect=lambda s: {
+            "BTCUSDT": ["rsi", "breakout", "divergence", "bb"],
+            "ETHUSDT": ["bb"],
+        }.get(s, [])):
+            from src.rules.daily_summary import _send_summary
+            await _send_summary({"period": 14}, MagicMock())
+
+        # Message sent — should only contain BTCUSDT, not ETHUSDT
+        mock_send.assert_awaited_once()
+        sent_msg = mock_send.call_args[0][0]
+        assert "BTC/USDT" in sent_msg
+        assert "ETH/USDT" not in sent_msg
+
+    @pytest.mark.asyncio
+    @patch("src.rules.daily_summary.send_message_async", new_callable=AsyncMock, return_value=True)
+    @patch("src.rules.daily_summary.get_previous_closed_candle")
+    @patch("src.rules.daily_summary.analyze_rsi")
+    @patch("src.rules.daily_summary.get_fear_greed_sentiment", return_value=("😐", "Neutro"))
+    @patch("src.rules.daily_summary.fetch_fear_greed_index", new_callable=AsyncMock, return_value=(50, "Neutral"))
+    @patch("src.rules.daily_summary.get_symbols")
+    async def test_rsi_symbols_included_in_summary(
+        self, mock_symbols, mock_fg, mock_sentiment, mock_rsi, mock_candle, mock_send
+    ):
+        """Symbols with 'rsi' in alerts should appear in daily summary."""
+        mock_symbols.return_value = [
+            {"name": "BTCUSDT", "alerts": ["rsi", "bb"]},
+            {"name": "PAXGUSDT", "alerts": ["rsi", "bb"]},
+        ]
+        mock_rsi.return_value = {"rsi": 50.0}
+        mock_candle.return_value = {"open": 100.0, "close": 101.0}
+
+        from src.rules import daily_summary as ds
+        with patch.object(ds, "get_symbol_alerts", return_value=["rsi", "bb"]):
+            from src.rules.daily_summary import _send_summary
+            await _send_summary({"period": 14}, MagicMock())
+
+        mock_send.assert_awaited_once()
+        sent_msg = mock_send.call_args[0][0]
+        assert "BTC/USDT" in sent_msg
+        assert "PAXG/USDT" in sent_msg
