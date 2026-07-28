@@ -125,6 +125,28 @@ def get_timeframes_for_symbol(symbol: str) -> List[str]:
     return []
 
 
+def get_symbol_alerts(symbol: str) -> List[str]:
+    """
+    Get which alert types a symbol is subscribed to.
+    Returns all alert types if 'alerts' field is omitted (backward compatible).
+
+    Args:
+        symbol: Trading pair (e.g., "BTCUSDT")
+
+    Returns:
+        List of alert types (e.g., ["rsi", "breakout", "divergence", "bb"]) or empty list.
+    """
+    all_alerts = ["rsi", "breakout", "divergence", "bb"]
+    symbols = get_symbols()
+    for sym_config in symbols:
+        if sym_config.get("name") == symbol:
+            alerts = sym_config.get("alerts")
+            if alerts is None:
+                return all_alerts  # default: all
+            return alerts
+    return []
+
+
 def is_indicator_enabled(indicator_name: str) -> bool:
     return get_config().get(f"indicators.{indicator_name}.enabled", False)
 

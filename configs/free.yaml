@@ -12,12 +12,56 @@ telegram:
   # Send shutdown message when maintenance begins
   shutdown_message: true
 
-# Symbols to monitor (free tier: BTCUSDT only)
+# Symbols to monitor (free tier: 2 full + 14 BB-only)
 symbols:
   - name: "BTCUSDT"
     timeframes: ["4h", "1d", "1w", "1M"]
-  - name : "PAXGUSDT"
+    alerts: ["rsi", "breakout", "divergence", "bb"]
+  - name: "PAXGUSDT"
     timeframes: ["4h", "1d", "1w", "1M"]
+    alerts: ["rsi", "breakout", "divergence", "bb"]
+  - name: "ETHUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "SOLUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "BNBUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "XRPUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "DOGEUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "AVAXUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "LINKUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "LTCUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "SUIUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "AAVEUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "ONDOUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "ZECUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "XLMUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
+  - name: "AEROUSDT"
+    timeframes: ["1d", "1M"]
+    alerts: ["bb"]
 
 
 # Historical data backfill on startup
