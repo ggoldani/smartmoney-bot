@@ -440,7 +440,6 @@ class AlertEngine:
             alert_dict['bb_lower'] = result.get('bb_lower')
             alert_dict['bb_middle'] = result.get('bb_middle')
             alert_dict['effective_band'] = result.get('effective_band')
-            alert_dict['rsi_1w'] = result.get('rsi_1w')
             alert_dict['rsi_1M'] = result.get('rsi_1M')
 
         self.pending_alerts.append(alert_dict)
@@ -656,9 +655,7 @@ class AlertEngine:
         # Enrich result with trend context for template
         trend_cfg = self.bb_config.get('trend', {})
         rsi_period = trend_cfg.get('rsi_period', 14)
-        rsi_1w_data = analyze_rsi(symbol, "1w", period=rsi_period, _use_config=False)
         rsi_1M_data = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
-        result["rsi_1w"] = rsi_1w_data.get("rsi") if rsi_1w_data else None
         result["rsi_1M"] = rsi_1M_data.get("rsi") if rsi_1M_data else None
 
         self._collect_single_alert(

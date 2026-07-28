@@ -187,7 +187,6 @@ class TestBBTemplates:
             "price": 67500.0,
             "bb_upper": 67000.0,
             "effective_band": 67335.0,
-            "rsi_1w": 42.5,
             "rsi_1M": 38.0,
         }
         result = template_bb_short(data)
@@ -205,7 +204,6 @@ class TestBBTemplates:
             "price": 94500.0,
             "bb_lower": 95000.0,
             "effective_band": 94525.0,
-            "rsi_1w": 58.0,
             "rsi_1M": 62.0,
         }
         result = template_bb_long(data)
@@ -219,7 +217,7 @@ class TestBBTemplates:
         data = {
             "symbol": "BTCUSDT", "interval": "1d", "price": 100.0,
             "bb_upper": 99.0, "effective_band": 99.5,
-            "rsi_1w": 40.0, "rsi_1M": 40.0,
+            "rsi_1M": 40.0,
         }
         assert ALERT_DISCLAIMER in template_bb_short(data)
         data_long = {**data, "bb_lower": 101.0}
@@ -237,7 +235,7 @@ class TestBBMegaAlert:
             "symbol": "BTCUSDT", "interval": "1d",
             "price": 67500.0, "bb_upper": 67000.0,
             "effective_band": 67335.0,
-            "rsi_1w": 42.0, "rsi_1M": 38.0,
+            "rsi_1M": 38.0,
         }]
         result = template_mega_alert(alerts)
         assert "BB Contratrend SHORT" in result
@@ -249,7 +247,7 @@ class TestBBMegaAlert:
             "symbol": "BTCUSDT", "interval": "1d",
             "price": 94500.0, "bb_lower": 95000.0,
             "effective_band": 94525.0,
-            "rsi_1w": 58.0, "rsi_1M": 62.0,
+            "rsi_1M": 62.0,
         }]
         result = template_mega_alert(alerts)
         assert "BB Contratrend LONG" in result
