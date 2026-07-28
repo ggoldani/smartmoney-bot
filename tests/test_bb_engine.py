@@ -25,7 +25,7 @@ def engine():
 class TestCollectBBAlert:
     """Tests for _collect_bb_alert() state machine."""
 
-    @patch.object(AlertEngine, "_determine_trend", return_value="BEAR")
+    @patch.object(AlertEngine, "_determine_trend", return_value=("BEAR", 40.0))
     @patch("src.rules.engine.check_bb_breach")
     @patch("src.rules.engine.is_price_inside_bands", return_value=False)
     @patch("src.rules.engine.is_indicator_enabled", return_value=True)
@@ -43,7 +43,7 @@ class TestCollectBBAlert:
             assert args.kwargs["condition"] == "SHORT"
             assert args.kwargs["alert_type"] == "BB"
 
-    @patch.object(AlertEngine, "_determine_trend", return_value="BULL")
+    @patch.object(AlertEngine, "_determine_trend", return_value=("BULL", 60.0))
     @patch("src.rules.engine.check_bb_breach")
     @patch("src.rules.engine.is_price_inside_bands", return_value=False)
     @patch("src.rules.engine.is_indicator_enabled", return_value=True)
@@ -58,7 +58,7 @@ class TestCollectBBAlert:
             mock_collect.assert_called_once()
             assert mock_collect.call_args.kwargs["condition"] == "LONG"
 
-    @patch.object(AlertEngine, "_determine_trend", return_value="BEAR")
+    @patch.object(AlertEngine, "_determine_trend", return_value=("BEAR", 40.0))
     @patch("src.rules.engine.check_bb_breach")
     @patch("src.rules.engine.is_price_inside_bands", return_value=False)
     @patch("src.rules.engine.is_indicator_enabled", return_value=True)
@@ -72,7 +72,7 @@ class TestCollectBBAlert:
             engine._collect_bb_alert("BTCUSDT", "1d", 95.0, 1700000000)
             mock_collect.assert_not_called()
 
-    @patch.object(AlertEngine, "_determine_trend", return_value=None)
+    @patch.object(AlertEngine, "_determine_trend", return_value=(None, 50.0))
     @patch("src.rules.engine.check_bb_breach")
     @patch("src.rules.engine.is_price_inside_bands", return_value=False)
     @patch("src.rules.engine.is_indicator_enabled", return_value=True)
@@ -134,7 +134,7 @@ class TestSymbolRouting:
             engine._collect_breakout_alert("ETHUSDT", "1d", 100.0, 1700000000)
             mock_throttle.assert_not_called()
 
-    @patch.object(AlertEngine, "_determine_trend", return_value="BEAR")
+    @patch.object(AlertEngine, "_determine_trend", return_value=("BEAR", 40.0))
     @patch("src.rules.engine.get_symbol_alerts", return_value=["rsi", "breakout", "divergence", "bb"])
     @patch("src.rules.engine.is_indicator_enabled", return_value=True)
     def test_bb_runs_for_full_symbol(self, mock_enabled, mock_alerts, mock_trend, engine):
@@ -151,7 +151,9 @@ class TestTrendFilterMensalOnly:
     def test_bull_trend_mensal_only(self, mock_rsi, engine):
         """RSI(1M) > 50 → BULL, no weekly check needed."""
         mock_rsi.return_value = {"rsi": 60.0}
-        assert engine._determine_trend("BTCUSDT") == "BULL"
+        trend, rsi_val = engine._determine_trend("BTCUSDT")
+        assert trend == "BULL"
+        assert rsi_val == 60.0
         # Should call analyze_rsi only once (1M), not twice (1w + 1M)
         assert mock_rsi.call_count == 1
         mock_rsi.assert_called_with("BTCUSDT", "1M", period=14, _use_config=False)
@@ -159,14 +161,20 @@ class TestTrendFilterMensalOnly:
     @patch("src.rules.engine.analyze_rsi")
     def test_bear_trend_mensal_only(self, mock_rsi, engine):
         mock_rsi.return_value = {"rsi": 40.0}
-        assert engine._determine_trend("BTCUSDT") == "BEAR"
+        trend, rsi_val = engine._determine_trend("BTCUSDT")
+        assert trend == "BEAR"
+        assert rsi_val == 40.0
 
     @patch("src.rules.engine.analyze_rsi")
     def test_neutral_exact_threshold(self, mock_rsi, engine):
         mock_rsi.return_value = {"rsi": 50.0}
-        assert engine._determine_trend("BTCUSDT") is None
+        trend, rsi_val = engine._determine_trend("BTCUSDT")
+        assert trend is None
+        assert rsi_val == 50.0
 
     @patch("src.rules.engine.analyze_rsi")
     def test_neutral_insufficient_data(self, mock_rsi, engine):
         mock_rsi.return_value = None
-        assert engine._determine_trend("BTCUSDT") is None
+        trend, rsi_val = engine._determine_trend("BTCUSDT")
+        assert trend is None
+        assert rsi_val is None

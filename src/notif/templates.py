@@ -376,7 +376,7 @@ def template_mega_alert(alerts: List[Dict]) -> str:
 
             direction = 'SHORT' if alert['condition'] == 'SHORT' else 'LONG'
             alert_blocks.append(
-                f"BB Contratrend {direction} ({tf}): \\n{symbol} {price} | RSI 1M {rsi_1M}"
+                f"BB Contratrend {direction} ({tf}): \n{symbol} {price} | RSI 1M {rsi_1M}"
             )
 
     alerts_text = "\n\n".join(alert_blocks)

@@ -251,3 +251,18 @@ class TestBBMegaAlert:
         }]
         result = template_mega_alert(alerts)
         assert "BB Contratrend LONG" in result
+
+    def test_mega_alert_bb_uses_real_newline_not_literal(self):
+        """Regression test: BB block must use real \\n, not literal backslash-n."""
+        from src.notif.templates import template_mega_alert
+        alerts = [{
+            "type": "BB", "condition": "SHORT",
+            "symbol": "BTCUSDT", "interval": "1d",
+            "price": 67500.0, "rsi_1M": 38.0,
+        }]
+        result = template_mega_alert(alerts)
+        # The BB block must contain a real newline after the label
+        assert "BB Contratrend SHORT (1 dia): \n" in result  # real newline
+        # Must NOT contain literal backslash-n
+        bb_line = [l for l in result.split('\n') if 'BB Contratrend' in l][0]
+        assert '\\n' not in repr(bb_line)

@@ -21,6 +21,7 @@ symbols:
     timeframes: ["4h", "1d", "1w", "1M"]
     alerts: ["rsi", "breakout", "divergence", "bb"]
   - name: "ETHUSDT"
+    # 1d = BB calculation; 1M = trend filter (RSI monthly). BB-only, no RSI/breakout/divergence alerts.
     timeframes: ["1d", "1M"]
     alerts: ["bb"]
   - name: "SOLUSDT"

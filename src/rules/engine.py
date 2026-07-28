@@ -159,7 +159,7 @@ class AlertEngine:
                 result = check_bb_breach(symbol, interval, current_price, period, std_mult, buffer_pct)
                 if result:
                     # Determine trend to know which breach direction is "active"
-                    trend = self._determine_trend(symbol)
+                    trend, _ = self._determine_trend(symbol)
                     condition_key_tuple = (symbol, interval, "BB")
                     if trend == "BEAR" and result["type"] == "UPPER":
                         self.last_condition[condition_key_tuple] = "SHORT"
@@ -306,15 +306,14 @@ class AlertEngine:
         """Return template function for BB contratrend type."""
         return template_bb_short if bb_type == "SHORT" else template_bb_long
 
-    def _determine_trend(self, symbol: str) -> Optional[str]:
+    def _determine_trend(self, symbol: str) -> tuple[Optional[str], Optional[float]]:
         """
         Determine trend from RSI on monthly only.
         Weekly dropped per strategy v2.
 
         Returns:
-            "BULL" if RSI(1M) > threshold
-            "BEAR" if RSI(1M) < threshold
-            None if neutral or insufficient data
+            (trend, rsi_value) where trend is "BULL", "BEAR", or None,
+            and rsi_value is the raw RSI(1M) float (or None if unavailable).
         """
         trend_cfg = self.bb_config.get('trend', {})
         rsi_period = trend_cfg.get('rsi_period', 14)
@@ -323,17 +322,17 @@ class AlertEngine:
         rsi_1M = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
 
         if not rsi_1M:
-            return None
+            return None, None
 
         val_1M = rsi_1M.get("rsi")
         if val_1M is None:
-            return None
+            return None, None
 
         if val_1M > threshold:
-            return "BULL"
+            return "BULL", val_1M
         if val_1M < threshold:
-            return "BEAR"
-        return None
+            return "BEAR", val_1M
+        return None, val_1M
 
     def _get_rsi_severity(self, condition: str) -> int:
         """
@@ -628,8 +627,8 @@ class AlertEngine:
         if not result:
             return
 
-        # Determine trend
-        trend = self._determine_trend(symbol)
+        # Determine trend (returns (trend, rsi_value) — reuse rsi for template enrichment)
+        trend, rsi_1M_value = self._determine_trend(symbol)
         if trend is None:
             return  # Neutral trend, no alert
 
@@ -652,11 +651,8 @@ class AlertEngine:
         if not self._check_throttle_and_mark(condition_key, alert_key, tracker_key, condition):
             return
 
-        # Enrich result with trend context for template
-        trend_cfg = self.bb_config.get('trend', {})
-        rsi_period = trend_cfg.get('rsi_period', 14)
-        rsi_1M_data = analyze_rsi(symbol, "1M", period=rsi_period, _use_config=False)
-        result["rsi_1M"] = rsi_1M_data.get("rsi") if rsi_1M_data else None
+        # Enrich result with trend context for template (reuse value from _determine_trend)
+        result["rsi_1M"] = rsi_1M_value
 
         self._collect_single_alert(
             alert_type='BB',
