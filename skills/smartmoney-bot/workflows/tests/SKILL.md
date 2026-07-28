@@ -83,6 +83,8 @@ Criar novos testes, aumentar coverage, corrigir testes quebrados, TDD.
 ## References
 - `tests/conftest.py` — fixtures existentes
 - `tests/test_indicators.py` — padrão de teste de indicador
+- `tests/test_bollinger.py` — BB indicator + template tests
+- `tests/test_bb_engine.py` — BB engine integration (state machine, routing, trend filter)
 - `tests/test_divergence.py` — padrão de teste complexo
 - `tests/test_websocket.py` — padrão de mock WS
 - `tests/test_throttle.py` — padrão de teste de throttle

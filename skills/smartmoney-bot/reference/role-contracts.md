@@ -35,7 +35,7 @@ User task
 | Role | Indicators | Engine | Datafeeds | Notif | Storage | Config | Tests | Deploy |
 |------|-----------|--------|-----------|-------|---------|--------|-------|--------|
 | **Pode criar arquivos em** | `src/indicators/` | `src/rules/` | `src/datafeeds/` | `src/notif/` | `src/storage/` | `configs/`, `src/config.py` | `tests/` | `docker/`, `scripts/` |
-| **Pode editar fora do escopo?** | Só integração em `engine.py` + `templates.py` + `free.yaml` | Só `config.py` se precisar de helper | Só `main.py` se startup flow | Só `engine.py` se chamada de throttle | Só `engine.py`/`repo.py` consumers | Nada em `src/` além de `config.py` | Só `src/` se corrigindo bug coberto pelo teste | Só `docker-compose.yml`, `.env.example` |
+| **Pode editar fora do escopo?** | Só integração em `engine.py` + `templates.py` + `free.yaml` | Só `config.py` se precisar de helper + symbol routing checks (`get_symbol_alerts`) | Só `main.py` se startup flow | Só `engine.py` se chamada de throttle | Só `engine.py`/`repo.py` consumers | Nada em `src/` além de `config.py` | Só `src/` se corrigindo bug coberto pelo teste | Só `docker-compose.yml`, `.env.example` |
 
 ## Regra de ouro
 **Toda declaração de "concluído" deve ser backed by prova executável** — dry-run OK, testes passando, diff cirúrgico. Não existe "concluído" sem evidência.

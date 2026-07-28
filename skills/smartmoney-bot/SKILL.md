@@ -13,15 +13,15 @@ Roteamento determinístico de tarefas no repo SmartMoney Bot. Carrega apenas o w
 - **Repo:** `/home/goldani/smartmoney-bot`
 - **Stack:** Python 3.13+ async, Binance WS multi-symbol, SQLite+SQLAlchemy, APScheduler, loguru, python-telegram-bot 21.x
 - **Entry point:** `src/main.py` → startup → backfill → WS → alert engine (5s loop) → Telegram
-- **Config:** `configs/free.yaml` | **Env:** `.env` | **Tests:** pytest (268 tests, 95%+ coverage)
+- **Config:** `configs/free.yaml` | **Env:** `.env` | **Tests:** pytest (334 tests, 95%+ coverage)
 - **Data Flow:** WS multi-symbol → Candles (SQLite) → Indicators (5s) → Rules → Throttle → Telegram
-- **Symbols:** BTCUSDT, PAXGUSDT (timeframes 1h, 4h, 1d, 1w, 1M)
+- **Symbols:** 16 symbols (2 full: BTCUSDT, PAXGUSDT — all alerts; 14 BB-only: ETH/SOL/BNB/XRP/DOGE/AVAX/LINK/LTC/SUI/AAVE/ONDO/ZEC/XLM/AERO — alerts: ["bb"] only, timeframes ["1d","1M"])
 
 ## Módulos do repo
 | Módulo | Path | LOC | Responsabilidade |
 |--------|------|-----|------------------|
-| indicators | `src/indicators/` | 567 | RSI (Wilder's p14), Breakouts (±0.15%), Divergence (3-pivot) |
-| rules | `src/rules/` | 1.304 | Alert engine (5s loop), rule_defs, daily_summary, divergence_processor |
+| indicators | `src/indicators/` | 751 | RSI (Wilder's p14), Breakouts (±0.15%), Divergence (3-pivot), BB Trend (21/2σ trend-follow) |
+| rules | `src/rules/` | 1.470 | Alert engine (5s loop), rule_defs, daily_summary, divergence_processor, BB trend-follow integration, symbol routing (`get_symbol_alerts`) |
 | datafeeds | `src/datafeeds/` | 595 | Binance WS/REST, Fear & Greed, Market Caps |
 | notif | `src/notif/` | 855 | Templates PT-BR, formatter, throttle (20/hr, 5/min) |
 | storage | `src/storage/` | 290 | SQLAlchemy ORM, models, repo, cleanup, init_db |
@@ -30,7 +30,7 @@ Roteamento determinístico de tarefas no repo SmartMoney Bot. Carrega apenas o w
 
 ## Decisão de routing (determinística)
 
-### Q1 — Tarefa altera `src/indicators/` (RSI, Breakout, Divergence)?
+### Q1 — Tarefa altera `src/indicators/` (RSI, Breakout, Divergence, Bollinger/BB trend-follow)?
 → **Sim:** carregar `workflows/indicators/SKILL.md`
 
 ### Q2 — Tarefa altera `src/rules/` (engine, rule_defs, daily_summary, divergence_processor)?
@@ -98,5 +98,5 @@ Todo workflow deve provar o resultado:
 ## Source files do repo
 - **`README.md`** — setup completo, troubleshooting, deploy, regras de negócio
 - **`src/CLAUDE.md`** — arquitetura detalhada e padrões de código
-- **`configs/free.yaml`** — todas configurações (RSI, breakouts, divergence, alerts, DB, logging)
+- **`configs/free.yaml`** — todas configurações (RSI, breakouts, divergence, bollinger, alerts, symbol routing (alerts field), DB, logging)
 - **`agents/code-reviewer.md`** — agent de code review pré-existente

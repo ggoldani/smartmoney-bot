@@ -14,7 +14,10 @@ Modificar o alert engine principal, regras de alerta, daily summary ou divergenc
 - `src/rules/rule_defs.py` — Definições de regras (recovery zones 40-60)
 - `src/rules/daily_summary.py` — Resumo diário (Fear & Greed + RSI 1D/1W/1M)
 - `src/rules/divergence_processor.py` — Processamento de divergência
-- Integração: `src/config.py` (helpers), `src/storage/repo.py` (queries)
+- **Symbol routing:** `get_symbol_alerts(symbol)` checks em `_collect_rsi`/`_collect_breakout`/`_collect_bb` + `_process_divergences` + `check_multi_tf_consolidation`
+- **`_determine_trend()`** — usa RSI(1M) apenas (weekly dropado em v2), retorna `tuple[Optional[str], Optional[float]]` (trend, rsi_value)
+- **`_collect_bb_alert()`** state machine — reset quando preço retorna dentro das bands (`is_price_inside_bands`)
+- Integração: `src/config.py` (helpers), `src/storage/repo.py` (queries), `src/indicators/bollinger.py` (BB breach detection)
 
 ## Triggers
 - "Mudar regra de alerta"
@@ -39,6 +42,8 @@ Modificar o alert engine principal, regras de alerta, daily summary ou divergenc
 - **Consolidação** janela 6s (`consolidation_interval`)
 - **Recovery zone** 40-60 reseta state (previne spam em reversões)
 - **skip_retroactive_alerts** — não alertar condições enquanto bot esteve offline
+- **Symbol routing:** cada `_collect_*` checa `get_symbol_alerts(symbol)` antes de processar (subset de alerts por symbol)
+- **BB trend filter:** `_determine_trend` usa RSI(1M) apenas, retorna `(trend, rsi_value)` tuple
 - **Sem hardcode** — config via `get_*_config()`
 - **Type hints** em todas funções
 - **loguru** para logging (nunca `print`)
@@ -86,7 +91,8 @@ Modificar o alert engine principal, regras de alerta, daily summary ou divergenc
 - [ ] Diff cirúrgico
 
 ## References
-- `src/rules/engine.py` — AlertEngine completo (780 linhas)
+- `src/rules/engine.py` — AlertEngine completo (937 linhas)
 - `src/rules/rule_defs.py` — recovery zones
+- `src/indicators/bollinger.py` — BB breach detection + `is_price_inside_bands` (anti-spam reset)
 - `src/main.py` — task creation pattern (linhas 128-145)
 - `configs/free.yaml` — `alerts.*` section

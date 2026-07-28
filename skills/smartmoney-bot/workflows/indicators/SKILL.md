@@ -33,6 +33,7 @@ Implementar ou modificar indicadores técnicos no módulo `src/indicators/`.
 - **Sem hardcode** — thresholds via `get_*_config()`
 - **Período RSI** sempre do config (`indicators.rsi.period`)
 - **Pivot window** (`pivot_left`, `pivot_right`) sempre do config
+- **BB period/std/buffer** sempre do config (`indicators.bollinger.*`)
 - **loguru** para logging (nunca `print`)
 - **Sem `eval`/`exec`**
 - **Sem raw SQL** — usar SQLAlchemy ORM via `src/storage/repo.py`
@@ -76,6 +77,6 @@ Implementar ou modificar indicadores técnicos no módulo `src/indicators/`.
 ## References
 - `src/indicators/rsi.py` — padrão de implementação (Wilder's smoothing)
 - `src/indicators/divergence.py` — padrão 3-pivot com RSI confirmation
-- `src/indicators/bollinger.py` — BB calculation (pandas rolling, ddof=0) + breach with buffer
+- `src/indicators/bollinger.py` — BB calculation (pandas rolling, ddof=0) + breach with buffer + trend-follow
 - `configs/free.yaml` — estrutura de config de indicadores
 - `src/rules/engine.py` — padrão de integração (chamadas no loop 5s)
