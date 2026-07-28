@@ -12,6 +12,8 @@ Modificar configuração do bot: thresholds, symbols, feature flags, env vars.
 ## Scope
 - `configs/free.yaml` — Config principal (bot, symbols, indicators, alerts, database, logging)
 - `src/config.py` — YAML loader, validation, helpers `get_*_config()`
+- `src/config.py::get_bollinger_config()` — BB params (period, std_mult, buffer_pct, trend)
+- `src/config.py::get_symbol_alerts()` — per-symbol alert routing (lê campo `alerts` de cada symbol)
 - `.env` / `.env.example` — Environment variables (BOT_TOKEN, CHANNEL_CHAT_ID, etc)
 
 ## Triggers
@@ -56,6 +58,16 @@ Modificar configuração do bot: thresholds, symbols, feature flags, env vars.
 3. Backfill é automático no startup
 4. Dry-run confirma symbols loaded
 
+### Adicionar symbol BB-only
+1. Adicionar entry em `configs/free.yaml` → `symbols:` com:
+   - `name: "<SYMBOL>USDT"`
+   - `timeframes: ["1d", "1M"]` (apenas timeframes necessários para BB trend-follow)
+   - `alerts: ["bb"]` (subset — só alerta BB, não RSI/breakout/divergence)
+2. O engine lê via `get_symbol_alerts(symbol)` e pula `_collect_rsi`/`_collect_breakout`/`_process_divergences` para esse symbol
+3. Backfill automático no startup (200 candles por timeframe)
+4. Dry-run confirma symbol loaded + routing correto
+5. Sem mudança em `src/` — routing é puramente config-driven
+
 ### Adicionar feature flag
 1. Adicionar boolean em `configs/free.yaml` sob módulo relevante
 2. Adicionar leitura em `get_*_config()` com default seguro
@@ -86,4 +98,4 @@ Modificar configuração do bot: thresholds, symbols, feature flags, env vars.
 - `configs/free.yaml` — estrutura completa
 - `src/config.py` — padrão de helper com validation
 - `.env.example` — env vars documentadas
-- `tests/test_config.py` — padrão de teste
+- `tests/test_config.py` — padrão de teste + `TestSymbolAlerts` (symbol routing tests)

@@ -125,6 +125,28 @@ def get_timeframes_for_symbol(symbol: str) -> List[str]:
     return []
 
 
+def get_symbol_alerts(symbol: str) -> List[str]:
+    """
+    Get which alert types a symbol is subscribed to.
+    Returns all alert types if 'alerts' field is omitted (backward compatible).
+
+    Args:
+        symbol: Trading pair (e.g., "BTCUSDT")
+
+    Returns:
+        List of alert types (e.g., ["rsi", "breakout", "divergence", "bb"]) or empty list.
+    """
+    all_alerts = ["rsi", "breakout", "divergence", "bb"]
+    symbols = get_symbols()
+    for sym_config in symbols:
+        if sym_config.get("name") == symbol:
+            alerts = sym_config.get("alerts")
+            if alerts is None:
+                return all_alerts  # default: all
+            return alerts
+    return []
+
+
 def is_indicator_enabled(indicator_name: str) -> bool:
     return get_config().get(f"indicators.{indicator_name}.enabled", False)
 
@@ -217,6 +239,34 @@ def get_rsi_config() -> Dict[str, Any]:
 
 def get_breakout_config() -> Dict[str, Any]:
     return get_config().get("indicators.breakout", {})
+
+
+def get_bollinger_config() -> Dict[str, Any]:
+    """Get Bollinger Bands config with validation and safe defaults."""
+    bb_config = dict(get_config().get("indicators.bollinger", {}) or {})
+
+    if not isinstance(bb_config, dict):
+        bb_config = {}
+
+    bb_config.setdefault("enabled", False)
+    bb_config.setdefault("timeframe", "1d")
+    bb_config.setdefault("period", 21)
+    bb_config.setdefault("std_mult", 2.0)
+    bb_config.setdefault("buffer_pct", 0.5)
+
+    trend = bb_config.get("trend", {})
+    if not isinstance(trend, dict):
+        trend = {}
+    trend.setdefault("rsi_period", 14)
+    trend.setdefault("threshold", 50)
+    bb_config["trend"] = trend
+
+    # Validate
+    _validate_numeric(bb_config, "period", 21, min_val=1, max_val=200, cast_fn=int)
+    _validate_numeric(bb_config, "std_mult", 2.0, min_val=0.5, max_val=4.0)
+    _validate_numeric(bb_config, "buffer_pct", 0.5, min_val=0.0, max_val=5.0)
+
+    return bb_config
 
 
 def get_alert_config() -> Dict[str, Any]:

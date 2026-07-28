@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytz
 from loguru import logger
 
-from src.config import get_daily_summary_config, get_symbols
+from src.config import get_daily_summary_config, get_symbols, get_symbol_alerts
 from src.datafeeds.fear_greed import fetch_fear_greed_index, get_fear_greed_sentiment
 from src.indicators.rsi import analyze_rsi
 from src.notif.templates import template_daily_summary_multi
@@ -120,6 +120,10 @@ async def _send_summary(rsi_config: dict, throttler) -> None:
     symbols_data = []
     for sym_config in symbols_cfg:
         symbol = sym_config["name"]
+
+        # Skip symbols without RSI in their alerts (BB-only don't appear in summary)
+        if 'rsi' not in get_symbol_alerts(symbol):
+            continue
 
         rsi_1d_result = analyze_rsi(symbol, "1d", overbought, oversold, period)
         rsi_1d = rsi_1d_result.get('rsi', 0) if rsi_1d_result else 0

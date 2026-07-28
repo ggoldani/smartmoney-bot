@@ -406,3 +406,41 @@ class TestConfigEdgeCases:
         loader = ConfigLoader(str(config_file))
         max_price = loader.get('indicators.max_price')
         assert max_price == 67420.50
+
+
+class TestSymbolAlerts:
+    """Tests for get_symbol_alerts() helper."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_config_file(self):
+        """Ensure these tests load configs/free.yaml, not a stale temp path left by earlier tests."""
+        from src import config as src_config
+        original = src_config.CONFIG_FILE
+        src_config.CONFIG_FILE = "./configs/free.yaml"
+        yield
+        src_config.CONFIG_FILE = original
+
+    def test_returns_alerts_when_defined(self):
+        """Should return the alerts list when explicitly defined."""
+        from src.config import reload_config, get_symbol_alerts
+        reload_config()  # configs/free.yaml
+        # ETHUSDT has alerts: ["bb"]
+        result = get_symbol_alerts("ETHUSDT")
+        assert result == ["bb"]
+
+    def test_returns_all_when_omitted(self):
+        """Should return all alerts when field omitted (backward compatible)."""
+        from src.config import reload_config, get_symbol_alerts
+        reload_config()
+        # BTCUSDT has explicit alerts field with all alert types
+        btc_alerts = get_symbol_alerts("BTCUSDT")
+        assert "rsi" in btc_alerts
+        assert "breakout" in btc_alerts
+        assert "divergence" in btc_alerts
+        assert "bb" in btc_alerts
+
+    def test_returns_unknown_symbol_empty(self):
+        """Should return empty list for unknown symbol."""
+        from src.config import get_symbol_alerts
+        result = get_symbol_alerts("NONEXISTENT")
+        assert result == []

@@ -202,6 +202,66 @@ Mín anterior: {prev_low} | -{change_pct}
 {ALERT_DISCLAIMER}"""
 
 
+def template_bb_short(data: Dict) -> str:
+    """
+    Template for BB trend-follow SHORT alert.
+    Triggered when downtrend (RSI 1M < 50) and price breaches BB upper band.
+
+    Args:
+        data: {
+            "symbol": "BTCUSDT", "interval": "1d", "price": 67500.0,
+            "bb_upper": 67000.0, "effective_band": 67335.0,
+            "rsi_1M": 38.0
+        }
+    """
+    symbol = format_symbol_display(data["symbol"])
+    timeframe = format_timeframe_display(data["interval"])
+    price = format_price_br(data["price"])
+    bb_upper = format_price_br(data["bb_upper"])
+    effective = format_price_br(data["effective_band"])
+    rsi_1M = format_rsi_value(data["rsi_1M"])
+    timestamp = format_datetime_br()
+
+    return f"""BB Trend SHORT ({timeframe})
+
+{symbol} {price}
+Banda superior: {bb_upper} (efetiva: {effective})
+Tendência: RSI 1M {rsi_1M} (baixa)
+
+{timestamp}
+{ALERT_DISCLAIMER}"""
+
+
+def template_bb_long(data: Dict) -> str:
+    """
+    Template for BB trend-follow LONG alert.
+    Triggered when uptrend (RSI 1M > 50) and price breaches BB lower band.
+
+    Args:
+        data: {
+            "symbol": "BTCUSDT", "interval": "1d", "price": 94500.0,
+            "bb_lower": 95000.0, "effective_band": 94525.0,
+            "rsi_1M": 62.0
+        }
+    """
+    symbol = format_symbol_display(data["symbol"])
+    timeframe = format_timeframe_display(data["interval"])
+    price = format_price_br(data["price"])
+    bb_lower = format_price_br(data["bb_lower"])
+    effective = format_price_br(data["effective_band"])
+    rsi_1M = format_rsi_value(data["rsi_1M"])
+    timestamp = format_datetime_br()
+
+    return f"""BB Trend LONG ({timeframe})
+
+{symbol} {price}
+Banda inferior: {bb_lower} (efetiva: {effective})
+Tendência: RSI 1M {rsi_1M} (alta)
+
+{timestamp}
+{ALERT_DISCLAIMER}"""
+
+
 def template_divergence(data: Dict) -> str:
     """
     Template for RSI divergence alert.
@@ -307,6 +367,17 @@ def template_mega_alert(alerts: List[Dict]) -> str:
 
             div_label = 'Bullish' if alert['condition'] == 'BULLISH' else 'Bearish'
             alert_blocks.append(f"Divergência {div_label} ({tf}): \n{symbol} {price} | RSI {rsi}")
+
+        elif alert['type'] == 'BB':
+            symbol = format_symbol_display(alert['symbol'])
+            tf = format_timeframe_display(alert['interval'])
+            price = format_price_br(alert['price'])
+            rsi_1M = format_rsi_value(alert.get('rsi_1M', 0))
+
+            direction = 'SHORT' if alert['condition'] == 'SHORT' else 'LONG'
+            alert_blocks.append(
+                f"BB Trend {direction} ({tf}): \n{symbol} {price} | RSI 1M {rsi_1M}"
+            )
 
     alerts_text = "\n\n".join(alert_blocks)
 

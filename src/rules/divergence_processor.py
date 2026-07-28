@@ -159,6 +159,11 @@ class DivergenceProcessor:
         if not divergence_config.get("enabled", True):
             return
 
+        # Routing: skip symbols not subscribed to divergence (e.g. BB-only symbols)
+        from src.config import get_symbol_alerts
+        if 'divergence' not in get_symbol_alerts(symbol):
+            return
+
         configured_timeframes = divergence_config.get("timeframes", ["4h", "1d", "1w"])
         if interval not in configured_timeframes:
             return
