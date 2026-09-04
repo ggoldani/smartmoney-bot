@@ -44,14 +44,25 @@ class TestFearGreedAPI:
 
     @pytest.mark.asyncio
     async def test_fetch_fear_greed_timeout(self):
-        """Should handle timeout gracefully."""
-        with patch('aiohttp.ClientSession') as mock_session_class:
-            mock_session = AsyncMock()
-            mock_session.__aenter__.return_value = mock_session
-            mock_session.get.side_effect = asyncio.TimeoutError()
+        """Should handle timeout gracefully, with exponential backoff retries."""
+        with patch('src.datafeeds.fear_greed.aiohttp.ClientSession') as mock_session_class, \
+             patch('src.datafeeds.fear_greed.asyncio.sleep') as mock_sleep:
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            # session.get(...) returns an async context manager whose __aenter__
+            # raises — surfacing as asyncio.TimeoutError inside the fetcher.
+            mock_get_cm = MagicMock()
+            mock_get_cm.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError())
+            mock_get_cm.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get.return_value = mock_get_cm
             mock_session_class.return_value = mock_session
 
             fgi_value, fgi_label = await fetch_fear_greed_index()
+
+            # Exhausted all 3 attempts with backoff sleeps between retries
+            assert mock_session.get.call_count == 3
+            assert mock_sleep.await_count == 2
             assert fgi_value is None
             assert fgi_label == 'Indisponível'
 
